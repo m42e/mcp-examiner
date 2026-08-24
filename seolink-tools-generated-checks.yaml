@@ -1,0 +1,877 @@
+formatVersion: 1
+name: seolink-tools generated checks
+description: Generated from the discovered MCP definitions for seolink-tools. Add expectations after reviewing the first run.
+serverName: seolink-tools
+serverProfile:
+  formatVersion: 1
+  name: seolink-tools
+  transport:
+    type: http
+    url: https://seolinkmap.com/mcp
+    headers: {}
+    oauth: null
+  protocol:
+    mode: auto
+    legacyVersion: 2025-11-25
+  source:
+    kind: generic
+    path: null
+    scope: null
+  timeoutMs: null
+  trusted: true
+serverSnapshot:
+  serverName: seolink-tools
+  protocolVersion: 2025-03-26
+  serverInfo:
+    name: SEOLinkMap Public MCP Server
+    version: 0.0.7
+  capabilities:
+    tools:
+      listChanged: true
+  instructions: SEOLinkMap MCP Server provides SERP-specific SEO intelligence. Use get_platform_info to learn capabilities, get_demo_serp_analysis for examples, content_search to find relevant articles, and content_get_full to read detailed content. Each SERP is unique - this server helps you understand what works for specific keywords.
+  tools:
+  - name: get_website_info
+    title: null
+    description: Get information about SEOLinkMap.com website and its services. Perfect for understanding what the platform offers.
+    inputSchema:
+      properties:
+        section:
+          description: Which section of website info to retrieve
+          enum:
+          - services
+          - pricing
+          - features
+          - about
+          type: string
+      type: object
+    outputSchema: null
+    annotations:
+      destructiveHint: false
+      idempotentHint: true
+      openWorldHint: false
+      readOnlyHint: true
+      title: Get Website Info
+    metadata: null
+  - name: get_demo_serp_analysis
+    title: null
+    description: Get real example SERP correlation analysis and action plan data from SEOLinkMap. This demonstrates the platform's statistical methodology, contradictory findings across different keywords, and SERP-specific intelligence.
+    inputSchema:
+      properties:
+        section:
+          description: Which section to retrieve
+          enum:
+          - action_plan_overview
+          - keyword_seo_report_builder
+          - keyword_seo_analysis
+          - correlations_raw_data
+          - statistical_methodology
+          type: string
+      type: object
+    outputSchema: null
+    annotations:
+      destructiveHint: false
+      idempotentHint: true
+      openWorldHint: false
+      readOnlyHint: true
+      title: Get Demo SERP Analysis
+    metadata: null
+  - name: content_search
+    title: null
+    description: Search articles and FAQ content for relevant SEO and documentation information. Returns lightweight previews ranked by relevance; use content_get_full to read a result in full. Results are paginated (default 5 per call) so low-context clients stay lean — raise "limit" to pull more in one pass, or page with "offset".
+    inputSchema:
+      properties:
+        limit:
+          default: 5
+          description: Max previews to return per call (default 5, max 100). Keep low for small/8k-context models; raise it on large-context models to pull many results in one pass.
+          maximum: 100
+          minimum: 1
+          type: integer
+        offset:
+          default: 0
+          description: Number of top-ranked results to skip, for paging. Pass the next_offset value from a prior response to get the next page (default 0).
+          minimum: 0
+          type: integer
+        search_phrase:
+          description: The search terms to look for in articles and FAQ
+          type: string
+      required:
+      - search_phrase
+      type: object
+    outputSchema: null
+    annotations:
+      destructiveHint: false
+      idempotentHint: true
+      openWorldHint: false
+      readOnlyHint: true
+      title: Search Content
+    metadata: null
+  - name: content_get_full
+    title: null
+    description: Get full content for a specific article or FAQ by ID.
+    inputSchema:
+      properties:
+        page_id:
+          description: The ID of the content to retrieve
+          type:
+          - string
+          - integer
+        type:
+          description: The type of content - either "article" or "faq"
+          enum:
+          - article
+          - faq
+          type: string
+      required:
+      - page_id
+      - type
+      type: object
+    outputSchema: null
+    annotations:
+      destructiveHint: false
+      idempotentHint: true
+      openWorldHint: false
+      readOnlyHint: true
+      title: Get Full Content
+    metadata: null
+  - name: get_private_mcp_info
+    title: null
+    description: Learn about SEOLinkMap's private MCP capabilities. Discover what you can do with your own secure MCP server connected to your SEOLinkMap account data, including statistical analysis, SERP intelligence, and conversational access to your SEO data.
+    inputSchema:
+      properties:
+        section:
+          description: Which aspect of the private MCP to learn about
+          enum:
+          - overview
+          - capabilities
+          - tools_available
+          - query_examples
+          - getting_started
+          type: string
+      type: object
+    outputSchema: null
+    annotations:
+      destructiveHint: false
+      idempotentHint: true
+      openWorldHint: false
+      readOnlyHint: true
+      title: Get Private MCP Info
+    metadata: null
+  - name: seolinkmap_signup
+    title: null
+    description: Creates a SEOLinkMap account for an email address supplied by the user and sends a confirmation email with setup instructions for their private MCP server. Requires a real address obtained from the user; placeholder, example and test addresses are rejected.
+    inputSchema:
+      properties:
+        email:
+          description: Valid email address supplied by the user for account creation
+          format: email
+          type: string
+      required:
+      - email
+      type: object
+    outputSchema: null
+    annotations:
+      destructiveHint: false
+      idempotentHint: false
+      openWorldHint: false
+      readOnlyHint: false
+      title: Create SEOLinkMap Account
+    metadata: null
+  resources: []
+  resourceTemplates: []
+  prompts: []
+  discoveryErrors: {}
+protocolVersion: 2025-03-26
+status: passed
+startedAtUnixMs: 1787393052083
+durationMs: 4299
+summary:
+  total: 6
+  passed: 6
+  failed: 0
+  errors: 0
+calls:
+- index: 1
+  operation: callTool
+  target: get_website_info
+  status: passed
+  durationMs: 333
+  response:
+    content:
+    - text: |-
+        {
+            "signup_url": "https:\/\/seolinkmap.com\/signup",
+            "pricing_url": "https:\/\/seolinkmap.com\/pricing",
+            "features_url": "https:\/\/seolinkmap.com\/features",
+            "faq_url": "https:\/\/seolinkmap.com\/faq",
+            "login_url": "https:\/\/seolinkmap.com\/login",
+            "documentation_url": "https:\/\/seolinkmap.com\/documentation",
+            "services": {
+                "website_crawling": {
+                    "name": "Complete Website Analysis",
+                    "description": "Comprehensive crawling and analysis of your entire website with interactive visual architecture mapping",
+                    "features": [
+                        "PageRank calculation",
+                        "Internal link analysis",
+                        "Technical SEO audit",
+                        "Visual site structure mapping",
+                        "Interactive network clustering"
+                    ]
+                },
+                "competitor_research": {
+                    "name": "Competitor Intelligence",
+                    "description": "Deep analysis of competitor strategies with HUD-style statistical correlation displays",
+                    "features": [
+                        "Backlink analysis",
+                        "Keyword gaps",
+                        "Content strategy insights",
+                        "SERP-specific correlation analysis",
+                        "Statistical significance testing"
+                    ]
+                },
+                "backlink_prospecting": {
+                    "name": "Backlink Prospector",
+                    "description": "Automated analysis of hundreds of potential link prospects with viability assessment and draft outreach emails",
+                    "features": [
+                        "Automated prospect discovery",
+                        "Detailed viability analysis with reasoning",
+                        "Draft outreach emails for viable prospects",
+                        "CRM-lite contact tracking",
+                        "10-50 quality prospects per keyword in ~30 minutes"
+                    ]
+                },
+                "performance_tracking": {
+                    "name": "Performance Monitoring",
+                    "description": "Track your SEO performance with visual timeline snapshots and real-time heatmap updates",
+                    "features": [
+                        "Traffic analysis",
+                        "Keyword ranking",
+                        "SERP monitoring",
+                        "Historical timeline visualization",
+                        "Live-updating dashboards"
+                    ]
+                },
+                "client_presentations": {
+                    "name": "Visual Client Reports",
+                    "description": "Generate shareable, interactive visual presentations that wow clients and demonstrate clear SEO value",
+                    "features": [
+                        "Drag-and-drop report builder",
+                        "Revocable sharing links",
+                        "Interactive site exploration",
+                        "Before\/after comparisons"
+                    ]
+                }
+            }
+        }
+      type: text
+  assertions: []
+  error: null
+- index: 2
+  operation: callTool
+  target: get_demo_serp_analysis
+  status: passed
+  durationMs: 337
+  response:
+    content:
+    - text: |-
+        {
+            "analysis_type": "COMPLETE SEO ACTION PLAN - Real SEOLinkMap Output",
+            "why_this_is_revolutionary": "This is not just data - this is a complete strategic playbook with statistical backing that contradicts generic SEO advice",
+            "key_findings": {
+                "page_performance_matters_for_seo_strategy": "Websites with better Lighthouse Scores (around 42) tend to rank higher (62% relationship with rankings, 89% confidence)",
+                "loading_speed_impacts_seo_report_builder": "Faster loading times (lower LCP values) correlate with better rankings (66% relationship, 90% confidence). Aim for around 8.5 seconds",
+                "image_optimization_helps_seo_software": "Pages with proper alt text implementation rank better (55% relationship)",
+                "keyword_placement_critical_for_seo_strategy": "Having keywords closer to beginning of title tags strongly correlates with better rankings (91% relationship, 87% confidence)",
+                "internal_linking_shows_query_specific_patterns": "For \"SEO Analysis,\" more internal links (around 56) correlate with better rankings, while for \"SEO Strategy,\" fewer internal links perform better"
+            },
+            "common_seo_wisdom_challenged": {
+                "content_length_isnt_consistently_important": "Despite common advice to \"write long content,\" we found minimal correlation between content length and rankings for \"SEO Strategy\" and \"SEO Analysis\" (with high confidence)",
+                "https_is_now_standard": "Almost all ranking pages use HTTPS, making it a baseline requirement rather than a competitive advantage",
+                "exact_keyword_matching_isnt_critical": "Having exact keywords in H1 and title tags shows weak correlations across most queries",
+                "multiple_h1_tags_may_hurt_rankings": "For \"SEO Report Builder,\" having more than one H1 tag correlates with worse rankings (52% relationship)"
+            },
+            "consistent_non_factors": {
+                "schema_implementation": "Shows minimal impact across all queries",
+                "html5_semantic_elements": "Consistently show negligible correlations with high confidence",
+                "first_input_delay_fid": "Shows minimal ranking impact across queries",
+                "specific_readability_scores": "Show inconsistent patterns"
+            },
+            "query_specific_patterns_proof_of_serp_uniqueness": {
+                "seo_strategy_favors": "Performance-focused pages with good Lighthouse scores, faster FCP and TTI times, and well-placed keywords in titles",
+                "seo_report_builder_shows": "Stronger correlations with loading metrics like LCP and TTI, benefits from single H1 tags and higher HTML-to-code ratios",
+                "seo_software_shows": "Stronger correlations with visual content metrics (Image Count and Alt Text Ratio)",
+                "seo_analysis_favors": "Highly readable content (lower FK Grade, higher FK Ease) with moderate internal linking"
+            },
+            "statistical_validity_assessment_honest_limitations": {
+                "limited_sample_sizes": "Most correlations have p-values above traditional 0.05 threshold due to small sample sizes (6-10 observations per query)",
+                "most_reliable_findings": "LCP for \"SEO Report Builder\" (p=0.10) and Lighthouse Score for \"SEO Strategy\" (p=0.11)",
+                "contradictory_patterns_significance": "Contradictory patterns across different queries may indicate either query-specific ranking factors or statistical noise"
+            },
+            "competitive_positioning_strategy_actionable_intelligence": {
+                "for_seo_analysis": "Create highly readable content (aim for FK Grade around 5-6 and FK Ease around 73) with moderate number of internal links (about 56)",
+                "for_seo_report_builder": "Focus on page performance optimization, particularly LCP (aim for 8.5 seconds). Use single H1 tag",
+                "for_seo_software": "Include relevant images with complete alt text descriptions. Optimize First Contentful Paint to around 3 seconds",
+                "for_seo_strategy": "Optimize overall page performance (aim for Lighthouse Score around 42) and place keywords near beginning of title tag"
+            },
+            "why_this_destroys_generic_seo_advice": "These findings show OPPOSITE optimization strategies for different keywords - proof that generic \"best practices\" can actually hurt you. Nobody uses average global temp to decide what to wear... SEOLinkMap is the frst to offer \"local\" weather (in the form of SERP specific analysis)"
+        }
+      type: text
+  assertions: []
+  error: null
+- index: 3
+  operation: callTool
+  target: content_search
+  status: passed
+  durationMs: 332
+  response:
+    content:
+    - text: |-
+        {
+            "instructions": "we did not find a search term. Please search for something.",
+            "success": false,
+            "error": "Search phrase cannot be empty"
+        }
+      type: text
+  assertions: []
+  error: null
+- index: 4
+  operation: callTool
+  target: content_get_full
+  status: passed
+  durationMs: 346
+  response:
+    content:
+    - text: |-
+        {
+            "instructions": "use \"article\" or \"faq\" for the \"type\"",
+            "success": false,
+            "error": "Invalid pageId or type. Type must be \"article\" or \"faq\""
+        }
+      type: text
+  assertions: []
+  error: null
+- index: 5
+  operation: callTool
+  target: get_private_mcp_info
+  status: passed
+  durationMs: 338
+  response:
+    content:
+    - text: |-
+        {
+            "signup_url": "https:\/\/seolinkmap.com\/signup",
+            "pricing_url": "https:\/\/seolinkmap.com\/pricing",
+            "features_url": "https:\/\/seolinkmap.com\/features",
+            "faq_url": "https:\/\/seolinkmap.com\/faq",
+            "login_url": "https:\/\/seolinkmap.com\/login",
+            "documentation_url": "https:\/\/seolinkmap.com\/documentation",
+            "private_mcp_overview": {
+                "what_is_it": "Every SEOLinkMap user gets their own private MCP URL to access their projects and data for free. Think of this as a new form of webpage - one you chat with (or have AI agents connect to) that contains all your SEO data and responds when you ask questions about it.",
+                "key_difference_from_public": "While this public MCP provides general information about SEOLinkMap, your private MCP connects directly to YOUR actual SEO data, projects, and analysis results. This MCP is a \"public website\" and the private MCP is like \"logging in\" to see non-public data just for you.",
+                "access_method": "Secure OAuth authorization similar to \"sign in with Google\" but for your SEOLinkMap account",
+                "data_scope": "You maintain full control over which SEOLinkMap projects your AI assistant can access and query",
+                "compatible_platforms": "Works with Claude, GPT, and other MCP-enabled AI tools, plus custom implementations. We have a full featured MCP server for any remote MCP client to connect and use."
+            },
+            "core_value_proposition": {
+                "conversational_data_access": "Transform hours of manual data analysis into seconds of natural language queries",
+                "statistical_backing": "Get mathematical proof for SEO recommendations with actual correlation coefficients, p-values, Cooks distance, and confidence intervals",
+                "serp_specific_intelligence": "Access analysis tailored to your exact keywords rather than generic SEO advice. With SEOLinkMap, you dress for local weather... with the other guys, they only give you global average temps.",
+                "real_time_insights": "Query your actual website performance data, competitor analysis, and optimization opportunities"
+            },
+            "who_benefits": {
+                "seo_professionals": "Get statistical proof for client recommendations instead of generic best practices",
+                "agencies": "Scale advanced SEO analysis across all client projects through conversational AI",
+                "consultants": "Access academic-level statistical rigor without learning complex analytical software",
+                "in_house_teams": "Make data-driven decisions with instant access to correlation analysis and performance metrics",
+                "website_owners": "Skip generic SEO advice and discover what actually works for your specific keywords through personalized statistical analysis of your exact keywords and competitors"
+            }
+        }
+      type: text
+  assertions: []
+  error: null
+- index: 6
+  operation: callTool
+  target: seolinkmap_signup
+  status: passed
+  durationMs: 358
+  response:
+    content:
+    - text: |-
+        {
+            "success": false,
+            "user_message": "Email address is required for signup. Be sure to ask the user their email address. As another option, they can visit https:\/\/seolinkmap.com\/signup to get signed up."
+        }
+      type: text
+  assertions: []
+  error: null
+protocolEvents:
+- sequence: 1
+  elapsedMs: 0
+  direction: internal
+  method: session/connect
+  payload:
+    discoveryErrors: {}
+    prompts: 0
+    protocolVersion: 2025-03-26
+    resourceTemplates: 0
+    resources: 0
+    tools: 6
+- sequence: 2
+  elapsedMs: 445
+  direction: clientToServer
+  method: tools/call
+  payload:
+    arguments:
+      section: services
+    name: get_website_info
+- sequence: 3
+  elapsedMs: 778
+  direction: serverToClient
+  method: tools/call
+  payload:
+    content:
+    - text: |-
+        {
+            "signup_url": "https:\/\/seolinkmap.com\/signup",
+            "pricing_url": "https:\/\/seolinkmap.com\/pricing",
+            "features_url": "https:\/\/seolinkmap.com\/features",
+            "faq_url": "https:\/\/seolinkmap.com\/faq",
+            "login_url": "https:\/\/seolinkmap.com\/login",
+            "documentation_url": "https:\/\/seolinkmap.com\/documentation",
+            "services": {
+                "website_crawling": {
+                    "name": "Complete Website Analysis",
+                    "description": "Comprehensive crawling and analysis of your entire website with interactive visual architecture mapping",
+                    "features": [
+                        "PageRank calculation",
+                        "Internal link analysis",
+                        "Technical SEO audit",
+                        "Visual site structure mapping",
+                        "Interactive network clustering"
+                    ]
+                },
+                "competitor_research": {
+                    "name": "Competitor Intelligence",
+                    "description": "Deep analysis of competitor strategies with HUD-style statistical correlation displays",
+                    "features": [
+                        "Backlink analysis",
+                        "Keyword gaps",
+                        "Content strategy insights",
+                        "SERP-specific correlation analysis",
+                        "Statistical significance testing"
+                    ]
+                },
+                "backlink_prospecting": {
+                    "name": "Backlink Prospector",
+                    "description": "Automated analysis of hundreds of potential link prospects with viability assessment and draft outreach emails",
+                    "features": [
+                        "Automated prospect discovery",
+                        "Detailed viability analysis with reasoning",
+                        "Draft outreach emails for viable prospects",
+                        "CRM-lite contact tracking",
+                        "10-50 quality prospects per keyword in ~30 minutes"
+                    ]
+                },
+                "performance_tracking": {
+                    "name": "Performance Monitoring",
+                    "description": "Track your SEO performance with visual timeline snapshots and real-time heatmap updates",
+                    "features": [
+                        "Traffic analysis",
+                        "Keyword ranking",
+                        "SERP monitoring",
+                        "Historical timeline visualization",
+                        "Live-updating dashboards"
+                    ]
+                },
+                "client_presentations": {
+                    "name": "Visual Client Reports",
+                    "description": "Generate shareable, interactive visual presentations that wow clients and demonstrate clear SEO value",
+                    "features": [
+                        "Drag-and-drop report builder",
+                        "Revocable sharing links",
+                        "Interactive site exploration",
+                        "Before\/after comparisons"
+                    ]
+                }
+            }
+        }
+      type: text
+- sequence: 4
+  elapsedMs: 778
+  direction: clientToServer
+  method: tools/call
+  payload:
+    arguments:
+      section: action_plan_overview
+    name: get_demo_serp_analysis
+- sequence: 5
+  elapsedMs: 1116
+  direction: serverToClient
+  method: tools/call
+  payload:
+    content:
+    - text: |-
+        {
+            "analysis_type": "COMPLETE SEO ACTION PLAN - Real SEOLinkMap Output",
+            "why_this_is_revolutionary": "This is not just data - this is a complete strategic playbook with statistical backing that contradicts generic SEO advice",
+            "key_findings": {
+                "page_performance_matters_for_seo_strategy": "Websites with better Lighthouse Scores (around 42) tend to rank higher (62% relationship with rankings, 89% confidence)",
+                "loading_speed_impacts_seo_report_builder": "Faster loading times (lower LCP values) correlate with better rankings (66% relationship, 90% confidence). Aim for around 8.5 seconds",
+                "image_optimization_helps_seo_software": "Pages with proper alt text implementation rank better (55% relationship)",
+                "keyword_placement_critical_for_seo_strategy": "Having keywords closer to beginning of title tags strongly correlates with better rankings (91% relationship, 87% confidence)",
+                "internal_linking_shows_query_specific_patterns": "For \"SEO Analysis,\" more internal links (around 56) correlate with better rankings, while for \"SEO Strategy,\" fewer internal links perform better"
+            },
+            "common_seo_wisdom_challenged": {
+                "content_length_isnt_consistently_important": "Despite common advice to \"write long content,\" we found minimal correlation between content length and rankings for \"SEO Strategy\" and \"SEO Analysis\" (with high confidence)",
+                "https_is_now_standard": "Almost all ranking pages use HTTPS, making it a baseline requirement rather than a competitive advantage",
+                "exact_keyword_matching_isnt_critical": "Having exact keywords in H1 and title tags shows weak correlations across most queries",
+                "multiple_h1_tags_may_hurt_rankings": "For \"SEO Report Builder,\" having more than one H1 tag correlates with worse rankings (52% relationship)"
+            },
+            "consistent_non_factors": {
+                "schema_implementation": "Shows minimal impact across all queries",
+                "html5_semantic_elements": "Consistently show negligible correlations with high confidence",
+                "first_input_delay_fid": "Shows minimal ranking impact across queries",
+                "specific_readability_scores": "Show inconsistent patterns"
+            },
+            "query_specific_patterns_proof_of_serp_uniqueness": {
+                "seo_strategy_favors": "Performance-focused pages with good Lighthouse scores, faster FCP and TTI times, and well-placed keywords in titles",
+                "seo_report_builder_shows": "Stronger correlations with loading metrics like LCP and TTI, benefits from single H1 tags and higher HTML-to-code ratios",
+                "seo_software_shows": "Stronger correlations with visual content metrics (Image Count and Alt Text Ratio)",
+                "seo_analysis_favors": "Highly readable content (lower FK Grade, higher FK Ease) with moderate internal linking"
+            },
+            "statistical_validity_assessment_honest_limitations": {
+                "limited_sample_sizes": "Most correlations have p-values above traditional 0.05 threshold due to small sample sizes (6-10 observations per query)",
+                "most_reliable_findings": "LCP for \"SEO Report Builder\" (p=0.10) and Lighthouse Score for \"SEO Strategy\" (p=0.11)",
+                "contradictory_patterns_significance": "Contradictory patterns across different queries may indicate either query-specific ranking factors or statistical noise"
+            },
+            "competitive_positioning_strategy_actionable_intelligence": {
+                "for_seo_analysis": "Create highly readable content (aim for FK Grade around 5-6 and FK Ease around 73) with moderate number of internal links (about 56)",
+                "for_seo_report_builder": "Focus on page performance optimization, particularly LCP (aim for 8.5 seconds). Use single H1 tag",
+                "for_seo_software": "Include relevant images with complete alt text descriptions. Optimize First Contentful Paint to around 3 seconds",
+                "for_seo_strategy": "Optimize overall page performance (aim for Lighthouse Score around 42) and place keywords near beginning of title tag"
+            },
+            "why_this_destroys_generic_seo_advice": "These findings show OPPOSITE optimization strategies for different keywords - proof that generic \"best practices\" can actually hurt you. Nobody uses average global temp to decide what to wear... SEOLinkMap is the frst to offer \"local\" weather (in the form of SERP specific analysis)"
+        }
+      type: text
+- sequence: 6
+  elapsedMs: 1116
+  direction: clientToServer
+  method: tools/call
+  payload:
+    arguments:
+      limit: 5
+      offset: 0
+      search_phrase: ''
+    name: content_search
+- sequence: 7
+  elapsedMs: 1449
+  direction: serverToClient
+  method: tools/call
+  payload:
+    content:
+    - text: |-
+        {
+            "instructions": "we did not find a search term. Please search for something.",
+            "success": false,
+            "error": "Search phrase cannot be empty"
+        }
+      type: text
+- sequence: 8
+  elapsedMs: 1449
+  direction: clientToServer
+  method: tools/call
+  payload:
+    arguments:
+      page_id: ''
+      type: article
+    name: content_get_full
+- sequence: 9
+  elapsedMs: 1796
+  direction: serverToClient
+  method: tools/call
+  payload:
+    content:
+    - text: |-
+        {
+            "instructions": "use \"article\" or \"faq\" for the \"type\"",
+            "success": false,
+            "error": "Invalid pageId or type. Type must be \"article\" or \"faq\""
+        }
+      type: text
+- sequence: 10
+  elapsedMs: 1796
+  direction: clientToServer
+  method: tools/call
+  payload:
+    arguments:
+      section: overview
+    name: get_private_mcp_info
+- sequence: 11
+  elapsedMs: 2134
+  direction: serverToClient
+  method: tools/call
+  payload:
+    content:
+    - text: |-
+        {
+            "signup_url": "https:\/\/seolinkmap.com\/signup",
+            "pricing_url": "https:\/\/seolinkmap.com\/pricing",
+            "features_url": "https:\/\/seolinkmap.com\/features",
+            "faq_url": "https:\/\/seolinkmap.com\/faq",
+            "login_url": "https:\/\/seolinkmap.com\/login",
+            "documentation_url": "https:\/\/seolinkmap.com\/documentation",
+            "private_mcp_overview": {
+                "what_is_it": "Every SEOLinkMap user gets their own private MCP URL to access their projects and data for free. Think of this as a new form of webpage - one you chat with (or have AI agents connect to) that contains all your SEO data and responds when you ask questions about it.",
+                "key_difference_from_public": "While this public MCP provides general information about SEOLinkMap, your private MCP connects directly to YOUR actual SEO data, projects, and analysis results. This MCP is a \"public website\" and the private MCP is like \"logging in\" to see non-public data just for you.",
+                "access_method": "Secure OAuth authorization similar to \"sign in with Google\" but for your SEOLinkMap account",
+                "data_scope": "You maintain full control over which SEOLinkMap projects your AI assistant can access and query",
+                "compatible_platforms": "Works with Claude, GPT, and other MCP-enabled AI tools, plus custom implementations. We have a full featured MCP server for any remote MCP client to connect and use."
+            },
+            "core_value_proposition": {
+                "conversational_data_access": "Transform hours of manual data analysis into seconds of natural language queries",
+                "statistical_backing": "Get mathematical proof for SEO recommendations with actual correlation coefficients, p-values, Cooks distance, and confidence intervals",
+                "serp_specific_intelligence": "Access analysis tailored to your exact keywords rather than generic SEO advice. With SEOLinkMap, you dress for local weather... with the other guys, they only give you global average temps.",
+                "real_time_insights": "Query your actual website performance data, competitor analysis, and optimization opportunities"
+            },
+            "who_benefits": {
+                "seo_professionals": "Get statistical proof for client recommendations instead of generic best practices",
+                "agencies": "Scale advanced SEO analysis across all client projects through conversational AI",
+                "consultants": "Access academic-level statistical rigor without learning complex analytical software",
+                "in_house_teams": "Make data-driven decisions with instant access to correlation analysis and performance metrics",
+                "website_owners": "Skip generic SEO advice and discover what actually works for your specific keywords through personalized statistical analysis of your exact keywords and competitors"
+            }
+        }
+      type: text
+- sequence: 12
+  elapsedMs: 2135
+  direction: clientToServer
+  method: tools/call
+  payload:
+    arguments:
+      email: ''
+    name: seolinkmap_signup
+- sequence: 13
+  elapsedMs: 2493
+  direction: serverToClient
+  method: tools/call
+  payload:
+    content:
+    - text: |-
+        {
+            "success": false,
+            "user_message": "Email address is required for signup. Be sure to ask the user their email address. As another option, they can visit https:\/\/seolinkmap.com\/signup to get signed up."
+        }
+      type: text
+- sequence: 14
+  elapsedMs: 2493
+  direction: internal
+  method: session/disconnect
+  payload: null
+httpObservations:
+- sequence: 1
+  elapsedMs: 0
+  method: POST
+  url: https://seolinkmap.com/mcp
+  requestHeaders:
+    mcp-method: server/discover
+    mcp-protocol-version: 2026-07-28
+  requestBody:
+    id: 0
+    jsonrpc: '2.0'
+    method: server/discover
+    params:
+      _meta:
+        io.modelcontextprotocol/clientCapabilities: {}
+        io.modelcontextprotocol/clientInfo:
+          name: mcp-check
+          title: MCP Check
+          version: 0.1.0
+        io.modelcontextprotocol/protocolVersion: 2026-07-28
+  responseKind: null
+  sessionId: null
+  error: 'unexpected server response: HTTP 500 Internal Server Error: '
+- sequence: 2
+  elapsedMs: 338
+  method: POST
+  url: https://seolinkmap.com/mcp
+  requestHeaders: {}
+  requestBody:
+    id: 0
+    jsonrpc: '2.0'
+    method: initialize
+    params:
+      capabilities: {}
+      clientInfo:
+        name: mcp-check
+        title: MCP Check
+        version: 0.1.0
+      protocolVersion: 2025-11-25
+  responseKind: json
+  sessionId: 2025-03-26_f34527740cebd7ad86362aacef22f07d
+  error: null
+- sequence: 3
+  elapsedMs: 686
+  method: POST
+  url: https://seolinkmap.com/mcp
+  requestHeaders:
+    mcp-protocol-version: 2025-03-26
+  requestBody:
+    jsonrpc: '2.0'
+    method: notifications/initialized
+  responseKind: accepted
+  sessionId: null
+  error: null
+- sequence: 4
+  elapsedMs: 1011
+  method: GET
+  url: https://seolinkmap.com/mcp
+  requestHeaders:
+    mcp-protocol-version: 2025-03-26
+  requestBody: null
+  responseKind: sse
+  sessionId: null
+  error: null
+- sequence: 5
+  elapsedMs: 1012
+  method: POST
+  url: https://seolinkmap.com/mcp
+  requestHeaders:
+    mcp-protocol-version: 2025-03-26
+  requestBody:
+    id: 1
+    jsonrpc: '2.0'
+    method: tools/list
+    params:
+      _meta:
+        progressToken: '[REDACTED]'
+  responseKind: json
+  sessionId: 2025-03-26_f34527740cebd7ad86362aacef22f07d
+  error: null
+- sequence: 6
+  elapsedMs: 1825
+  method: POST
+  url: https://seolinkmap.com/mcp
+  requestHeaders:
+    mcp-protocol-version: 2025-03-26
+  requestBody:
+    id: 2
+    jsonrpc: '2.0'
+    method: tools/call
+    params:
+      _meta:
+        progressToken: '[REDACTED]'
+      arguments:
+        section: services
+      name: get_website_info
+  responseKind: json
+  sessionId: 2025-03-26_f34527740cebd7ad86362aacef22f07d
+  error: null
+- sequence: 7
+  elapsedMs: 2159
+  method: POST
+  url: https://seolinkmap.com/mcp
+  requestHeaders:
+    mcp-protocol-version: 2025-03-26
+  requestBody:
+    id: 3
+    jsonrpc: '2.0'
+    method: tools/call
+    params:
+      _meta:
+        progressToken: '[REDACTED]'
+      arguments:
+        section: action_plan_overview
+      name: get_demo_serp_analysis
+  responseKind: json
+  sessionId: 2025-03-26_f34527740cebd7ad86362aacef22f07d
+  error: null
+- sequence: 8
+  elapsedMs: 2497
+  method: POST
+  url: https://seolinkmap.com/mcp
+  requestHeaders:
+    mcp-protocol-version: 2025-03-26
+  requestBody:
+    id: 4
+    jsonrpc: '2.0'
+    method: tools/call
+    params:
+      _meta:
+        progressToken: '[REDACTED]'
+      arguments:
+        limit: 5
+        offset: 0
+        search_phrase: ''
+      name: content_search
+  responseKind: json
+  sessionId: 2025-03-26_f34527740cebd7ad86362aacef22f07d
+  error: null
+- sequence: 9
+  elapsedMs: 2830
+  method: POST
+  url: https://seolinkmap.com/mcp
+  requestHeaders:
+    mcp-protocol-version: 2025-03-26
+  requestBody:
+    id: 5
+    jsonrpc: '2.0'
+    method: tools/call
+    params:
+      _meta:
+        progressToken: '[REDACTED]'
+      arguments:
+        page_id: ''
+        type: article
+      name: content_get_full
+  responseKind: json
+  sessionId: 2025-03-26_f34527740cebd7ad86362aacef22f07d
+  error: null
+- sequence: 10
+  elapsedMs: 3176
+  method: POST
+  url: https://seolinkmap.com/mcp
+  requestHeaders:
+    mcp-protocol-version: 2025-03-26
+  requestBody:
+    id: 6
+    jsonrpc: '2.0'
+    method: tools/call
+    params:
+      _meta:
+        progressToken: '[REDACTED]'
+      arguments:
+        section: overview
+      name: get_private_mcp_info
+  responseKind: json
+  sessionId: 2025-03-26_f34527740cebd7ad86362aacef22f07d
+  error: null
+- sequence: 11
+  elapsedMs: 3515
+  method: POST
+  url: https://seolinkmap.com/mcp
+  requestHeaders:
+    mcp-protocol-version: 2025-03-26
+  requestBody:
+    id: 7
+    jsonrpc: '2.0'
+    method: tools/call
+    params:
+      _meta:
+        progressToken: '[REDACTED]'
+      arguments:
+        email: ''
+      name: seolinkmap_signup
+  responseKind: json
+  sessionId: 2025-03-26_f34527740cebd7ad86362aacef22f07d
+  error: null
+- sequence: 12
+  elapsedMs: 3873
+  method: DELETE
+  url: https://seolinkmap.com/mcp
+  requestHeaders:
+    mcp-protocol-version: 2025-03-26
+  requestBody: null
+  responseKind: null
+  sessionId: null
+  error: 'Client error: HTTP status client error (404 Not Found) for url (https://seolinkmap.com/mcp)'
+connectionError: null
+shutdownError: null

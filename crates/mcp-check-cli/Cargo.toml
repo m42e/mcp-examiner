@@ -1,0 +1,17 @@
+[package]
+name = "mcp-check-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Headless MCP Check runner and configuration utility"
+
+[[bin]]
+name = "mcp-check"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+mcp-check-core = { path = "../mcp-check-core" }
+serde_json.workspace = true
+tokio.workspace = true

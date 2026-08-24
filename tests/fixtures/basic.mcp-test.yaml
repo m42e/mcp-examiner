@@ -1,0 +1,28 @@
+$schema: ../../../mcp-test.schema.json
+name: Basic MCP fixture
+description: Exercises each call type in the MCP Inspector test-set schema.
+calls:
+  - type: callTool
+    name: echo
+    arguments:
+      message: hello from automation
+    expect:
+      contains: hello from automation
+      pattern: '"isError":false'
+      json:
+        isError: false
+  - type: readResource
+    uri: fixture://readme
+    expect:
+      contains: Fixture resource
+      json:
+        contents:
+          - uri: fixture://readme
+            mimeType: text/plain
+            text: Fixture resource
+  - type: getPrompt
+    name: greeting
+    arguments:
+      name: Ada
+    expect:
+      contains: Hello, Ada!

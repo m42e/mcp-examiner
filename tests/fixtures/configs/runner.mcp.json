@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "fixture": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["tests/fixtures/servers/basic-stdio.mjs"],
+      "cwd": "${workspaceFolder}",
+      "protocolEra": "2025-11-25",
+      "timeout": 5000
+    }
+  }
+}

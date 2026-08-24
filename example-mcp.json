@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "seolink-tools": {
+      "type": "http",
+      "url": "https://seolinkmap.com/mcp"
+    }
+  }
+}

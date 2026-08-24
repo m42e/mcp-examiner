@@ -1,0 +1,33 @@
+{
+  "name": "mcp-check",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "check": "npm run build && cargo test --workspace && npm run test:ui",
+    "cli": "cargo run -p mcp-check-cli --",
+    "preview": "vite preview",
+    "test:ui": "playwright test",
+    "tauri": "tauri"
+  },
+  "packageManager": "npm@11.18.0",
+  "dependencies": {
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-dialog": "^2.7.2",
+    "@tauri-apps/plugin-opener": "^2",
+    "lucide-react": "^1.33.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1",
+    "@tauri-apps/cli": "^2",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@vitejs/plugin-react": "^4.6.0",
+    "typescript": "~5.8.3",
+    "vite": "^7.0.4"
+  }
+}

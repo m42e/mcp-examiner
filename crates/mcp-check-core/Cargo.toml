@@ -1,0 +1,21 @@
+[package]
+name = "mcp-check-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Protocol, configuration, test, and report engine for MCP Check"
+
+[dependencies]
+dotenvy.workspace = true
+futures.workspace = true
+http.workspace = true
+reqwest.workspace = true
+regex.workspace = true
+rmcp.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+sse-stream.workspace = true
+thiserror.workspace = true
+tokio.workspace = true

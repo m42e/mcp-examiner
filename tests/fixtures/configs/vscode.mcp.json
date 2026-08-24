@@ -1,0 +1,32 @@
+{
+  "servers": {
+    "localExample": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@example/mcp-server"],
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "API_TOKEN": "${input:api-token}"
+      },
+      "sandboxEnabled": true
+    },
+    "remoteExample": {
+      "type": "http",
+      "url": "https://example.invalid/mcp",
+      "headers": {
+        "Authorization": "Bearer ${input:api-token}"
+      },
+      "oauth": {
+        "clientId": "mcp-check-fixture"
+      }
+    }
+  },
+  "inputs": [
+    {
+      "type": "promptString",
+      "id": "api-token",
+      "description": "API token",
+      "password": true
+    }
+  ]
+}

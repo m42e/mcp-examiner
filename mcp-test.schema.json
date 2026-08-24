@@ -1,0 +1,142 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "MCP Inspector Test Set",
+    "description": "A declarative sequence of MCP calls with optional response assertions.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+        "name",
+        "calls"
+    ],
+    "properties": {
+        "$schema": {
+            "description": "Optional schema URL used by JSON-aware editors.",
+            "type": "string",
+            "format": "uri-reference"
+        },
+        "name": {
+            "description": "Human-readable test-set name.",
+            "type": "string",
+            "pattern": "\\S"
+        },
+        "description": {
+            "description": "Optional explanation of the test set.",
+            "type": "string"
+        },
+        "calls": {
+            "description": "MCP calls to run in sequence.",
+            "type": "array",
+            "items": {
+                "$ref": "#/$defs/call"
+            }
+        }
+    },
+    "$defs": {
+        "responseExpectation": {
+            "description": "All configured response checks must match the response body.",
+            "type": "object",
+            "additionalProperties": false,
+            "minProperties": 1,
+            "properties": {
+                "contains": {
+                    "description": "Literal text that must occur in the response.",
+                    "type": "string"
+                },
+                "pattern": {
+                    "description": "Rust regular expression that must match the response.",
+                    "type": "string"
+                },
+                "json": {
+                    "description": "Partial JSON structure that must match the parsed response. Expected object fields match recursively; arrays match in order and length; primitives match exactly.",
+                    "not": {
+                        "type": "null"
+                    }
+                }
+            }
+        },
+        "callTool": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "type",
+                "name"
+            ],
+            "properties": {
+                "type": {
+                    "const": "callTool"
+                },
+                "name": {
+                    "description": "Name of the MCP tool to call.",
+                    "type": "string",
+                    "minLength": 1
+                },
+                "arguments": {
+                    "description": "Optional JSON object passed to the tool.",
+                    "type": "object"
+                },
+                "expect": {
+                    "$ref": "#/$defs/responseExpectation"
+                }
+            }
+        },
+        "readResource": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "type",
+                "uri"
+            ],
+            "properties": {
+                "type": {
+                    "const": "readResource"
+                },
+                "uri": {
+                    "description": "URI of the MCP resource to read.",
+                    "type": "string",
+                    "minLength": 1
+                },
+                "expect": {
+                    "$ref": "#/$defs/responseExpectation"
+                }
+            }
+        },
+        "getPrompt": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "type",
+                "name"
+            ],
+            "properties": {
+                "type": {
+                    "const": "getPrompt"
+                },
+                "name": {
+                    "description": "Name of the MCP prompt to retrieve.",
+                    "type": "string",
+                    "minLength": 1
+                },
+                "arguments": {
+                    "description": "Optional JSON object passed to the prompt.",
+                    "type": "object"
+                },
+                "expect": {
+                    "$ref": "#/$defs/responseExpectation"
+                }
+            }
+        },
+        "call": {
+            "oneOf": [
+                {
+                    "$ref": "#/$defs/callTool"
+                },
+                {
+                    "$ref": "#/$defs/readResource"
+                },
+                {
+                    "$ref": "#/$defs/getPrompt"
+                }
+            ]
+        }
+    }
+}
