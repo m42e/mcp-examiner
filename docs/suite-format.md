@@ -1,6 +1,6 @@
 # MCP Test Set Format
 
-MCP Check accepts JSON or YAML test sets matching [`mcp-test.schema.json`](../mcp-test.schema.json). A test set has a name and an ordered list of MCP calls. Calls run sequentially on one fresh connection.
+MCP Examiner accepts JSON or YAML test sets matching [`mcp-test.schema.json`](../mcp-test.schema.json). A test set has a name and an ordered list of MCP calls. Calls run sequentially on one fresh connection.
 
 ```yaml
 $schema: ../mcp-test.schema.json
@@ -61,7 +61,7 @@ npm run cli -- run tests/fixtures/basic.mcp-test.yaml \
   --config tests/fixtures/configs/runner.mcp.json \
   --server fixture \
   --workspace-folder . \
-  --report mcp-check-report.html
+  --report mcp-examiner-report.html
 ```
 
 Provide unresolved client inputs with repeated `--input ID=VALUE` options. Values may contain additional `=` characters. Runs exit with `0` for pass, `1` for assertion failure, and `2` for execution error. Invalid files and CLI usage also return nonzero.

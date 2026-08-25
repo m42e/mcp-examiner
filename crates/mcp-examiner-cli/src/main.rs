@@ -1,13 +1,13 @@
 use std::{collections::BTreeMap, error::Error, fs, io, path::PathBuf};
 
 use clap::{Parser, Subcommand, ValueEnum};
-use mcp_check_core::{
+use mcp_examiner_core::{
     AppInfo, ConfigSourceKind, Redactor, ResolutionContext, RunStatus, SessionManager,
     import_config, parse_test_set, render_html_report, render_yaml_report, run_test_set,
 };
 
 #[derive(Debug, Parser)]
-#[command(name = "mcp-check", version, about = "Inspect and test MCP servers")]
+#[command(name = "mcp-examiner", version, about = "Inspect and test MCP servers")]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -30,7 +30,7 @@ enum Command {
         config: PathBuf,
         #[arg(long)]
         server: Option<String>,
-        #[arg(long, default_value = "mcp-check-report.html")]
+        #[arg(long, default_value = "mcp-examiner-report.html")]
         report: PathBuf,
         #[arg(long, value_enum, default_value_t = SourceArg::Auto)]
         source: SourceArg,
@@ -137,9 +137,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
 }
 
 fn select_profile(
-    profiles: Vec<mcp_check_core::ServerProfile>,
+    profiles: Vec<mcp_examiner_core::ServerProfile>,
     requested: Option<&str>,
-) -> Result<mcp_check_core::ServerProfile, io::Error> {
+) -> Result<mcp_examiner_core::ServerProfile, io::Error> {
     if let Some(requested) = requested {
         return profiles
             .into_iter()

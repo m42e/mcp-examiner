@@ -603,7 +603,7 @@ fn protocol_setup(
     selection: &ProtocolSelection,
 ) -> Result<(ClientInfo, ClientLifecycleMode, Option<ProtocolVersion>), ProtocolError> {
     let identity =
-        Implementation::new("mcp-check", env!("CARGO_PKG_VERSION")).with_title("MCP Check");
+        Implementation::new("mcp-examiner", env!("CARGO_PKG_VERSION")).with_title("MCP Examiner");
     let capabilities = ClientCapabilities::default();
 
     match selection {
@@ -768,7 +768,7 @@ mod tests {
             transport: TransportConfig::Http {
                 url: format!("http://127.0.0.1:{port}/mcp"),
                 headers: BTreeMap::from([
-                    ("X-MCP-Check".to_owned(), "fixture".to_owned()),
+                    ("X-MCP-Examiner".to_owned(), "fixture".to_owned()),
                     ("X-API-Key".to_owned(), "http-secret-4d2a".to_owned()),
                 ]),
                 oauth: None,
@@ -957,9 +957,9 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires MCP_CHECK_TEST_URL and network access"]
+    #[ignore = "requires MCP_EXAMINER_TEST_URL and network access"]
     async fn connects_to_external_http_server_when_configured() {
-        let url = std::env::var("MCP_CHECK_TEST_URL").expect("MCP_CHECK_TEST_URL is required");
+        let url = std::env::var("MCP_EXAMINER_TEST_URL").expect("MCP_EXAMINER_TEST_URL is required");
         let profile = ServerProfile {
             format_version: FORMAT_VERSION,
             name: "external-http".to_owned(),

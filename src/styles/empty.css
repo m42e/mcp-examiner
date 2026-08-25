@@ -1,0 +1,48 @@
+.empty-workspace {
+  display: flex;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  padding: 32px;
+  text-align: center;
+}
+
+.empty-signal {
+  display: grid;
+  grid-template-columns: 54px 54px 54px;
+  align-items: center;
+  margin-bottom: 24px;
+  color: var(--accent);
+}
+
+.empty-signal span {
+  height: 1px;
+  background: #b7bbb1;
+}
+
+.empty-signal svg {
+  justify-self: center;
+}
+
+.empty-actions {
+  display: flex;
+  gap: 9px;
+  margin-top: 20px;
+}
+
+.supported-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 30px;
+  color: #878c82;
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.supported-row svg {
+  color: #b2b6ad;
+}
+

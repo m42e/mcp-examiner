@@ -181,7 +181,7 @@ pub struct AppInfo {
 impl AppInfo {
     pub fn current() -> Self {
         Self {
-            name: "MCP Check".to_owned(),
+            name: "MCP Examiner".to_owned(),
             version: env!("CARGO_PKG_VERSION").to_owned(),
             format_version: FORMAT_VERSION,
             protocol_versions: PUBLISHED_PROTOCOL_VERSIONS

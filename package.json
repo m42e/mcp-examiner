@@ -1,5 +1,5 @@
 {
-  "name": "mcp-check",
+  "name": "mcp-examiner",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "check": "npm run build && cargo test --workspace && npm run test:ui",
-    "cli": "cargo run -p mcp-check-cli --",
+    "cli": "cargo run -p mcp-examiner-cli --",
     "preview": "vite preview",
     "test:ui": "playwright test",
     "tauri": "tauri"

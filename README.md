@@ -1,6 +1,6 @@
-# MCP Check
+# MCP Examiner
 
-A native workbench for inspecting and testing Model Context Protocol servers. MCP Check is being built as a Tauri 2 desktop application with a shared Rust engine and headless CLI.
+A native workbench for inspecting and testing Model Context Protocol servers. MCP Examiner is being built as a Tauri 2 desktop application with a shared Rust engine and headless CLI.
 
 ## Implemented
 
@@ -54,10 +54,30 @@ npm install
 npm run tauri dev
 ```
 
-Plain Cargo development launches are also supported; the debug app starts and owns Vite when it is not already running:
+Plain Cargo commands use the embedded frontend by default:
 
 ```bash
-cargo run -p mcp-check-app
+cargo run -p mcp-examiner-app
+```
+
+Use `--no-default-features` when you want the direct Cargo command to start and use Vite for hot reload:
+
+```bash
+cargo run --no-default-features -p mcp-examiner-app
+```
+
+Normal Cargo builds enable the `custom-protocol` feature by default. The crate's build script then rebuilds the frontend before compiling Tauri, so direct Cargo commands include the current UI:
+
+```bash
+cargo build -p mcp-examiner-app
+cargo run -p mcp-examiner-app
+```
+
+Build and launch the macOS release bundle through the Tauri CLI:
+
+```bash
+npm run tauri build
+open "target/release/bundle/macos/MCP Examiner.app"
 ```
 
 Run the frontend by itself at `http://localhost:1420` with `npm run dev`. Rust-backed actions such as configuration import require the Tauri runtime.
@@ -86,7 +106,7 @@ npm run cli -- run tests/fixtures/basic.mcp-test.yaml \
 	--config tests/fixtures/configs/runner.mcp.json \
 	--server fixture \
 	--workspace-folder . \
-	--report mcp-check-report.html
+	--report mcp-examiner-report.html
 ```
 
 The runner writes the requested HTML path and a YAML report with the same basename next to it. The Tests tab provides an editable HTML target path and displays both absolute saved paths after writing the pair.

@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/mcp-check-core", "crates/mcp-check-cli", "src-tauri"]
+members = ["crates/mcp-examiner-core", "crates/mcp-examiner-cli", "src-tauri"]
 resolver = "2"
 
 [workspace.package]

@@ -1,4 +1,4 @@
-use mcp_check_core::{
+use mcp_examiner_core::{
     AppInfo, ConfigSourceKind, ConnectionSnapshot, HttpObservation, ImportResult, ProtocolEvent,
     Redactor, ResolutionContext, RunProgress, ServerProfile, SessionManager, TestRunResult,
     import_config, parse_test_set, render_html_report, render_yaml_report,
@@ -10,7 +10,7 @@ use tauri::{AppHandle, State, ipc::Channel};
 
 mod secrets;
 
-#[cfg(debug_assertions)]
+#[cfg(all(debug_assertions, not(feature = "custom-protocol")))]
 use std::{
     net::TcpStream,
     path::Path,
@@ -215,7 +215,7 @@ async fn connect_server(
     sessions: State<'_, SessionManager>,
 ) -> Result<ConnectionSnapshot, String> {
     eprintln!(
-        "MCP Check: connecting '{}' with {:?}",
+        "MCP Examiner: connecting '{}' with {:?}",
         profile.name, profile.protocol
     );
     let mut resolved_context = ResolutionContext::from_process();
@@ -234,14 +234,14 @@ async fn connect_server(
     match result {
         Ok(snapshot) => {
             eprintln!(
-                "MCP Check: connected '{}' using protocol {}",
+                "MCP Examiner: connected '{}' using protocol {}",
                 profile.name, snapshot.protocol_version
             );
             Ok(snapshot)
         }
         Err(error) => {
             let error = redactor.redact_text(&error.to_string());
-            eprintln!("MCP Check: connection '{}' failed: {error}", profile.name);
+            eprintln!("MCP Examiner: connection '{}' failed: {error}", profile.name);
             Err(error)
         }
     }
@@ -313,7 +313,7 @@ async fn get_prompt(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    #[cfg(debug_assertions)]
+    #[cfg(all(debug_assertions, not(feature = "custom-protocol")))]
     let _dev_server = ensure_dev_server();
 
     tauri::Builder::default()
@@ -344,10 +344,10 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
-#[cfg(debug_assertions)]
+#[cfg(all(debug_assertions, not(feature = "custom-protocol")))]
 struct DevServer(Child);
 
-#[cfg(debug_assertions)]
+#[cfg(all(debug_assertions, not(feature = "custom-protocol")))]
 impl Drop for DevServer {
     fn drop(&mut self) {
         let _ = self.0.kill();
@@ -355,7 +355,7 @@ impl Drop for DevServer {
     }
 }
 
-#[cfg(debug_assertions)]
+#[cfg(all(debug_assertions, not(feature = "custom-protocol")))]
 fn ensure_dev_server() -> Option<DevServer> {
     if TcpStream::connect(("127.0.0.1", 1420)).is_ok() {
         return None;
@@ -364,7 +364,7 @@ fn ensure_dev_server() -> Option<DevServer> {
     let workspace = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .expect("Tauri crate must be inside the workspace");
-    eprintln!("MCP Check: starting Vite for cargo run");
+    eprintln!("MCP Examiner: starting Vite for cargo run");
     let server = DevServer(
         Command::new("npm")
             .args(["run", "dev", "--", "--host", "127.0.0.1"])
@@ -390,7 +390,7 @@ mod tests {
     #[test]
     fn writes_and_reads_utf8_documents() {
         let directory =
-            std::env::temp_dir().join(format!("mcp-check-documents-{}", std::process::id()));
+            std::env::temp_dir().join(format!("mcp-examiner-documents-{}", std::process::id()));
         let path = directory.join("nested").join("mcp-test.yaml");
         let content = "name: Saved test\ncalls: []\n";
 

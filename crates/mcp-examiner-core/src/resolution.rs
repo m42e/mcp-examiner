@@ -392,7 +392,7 @@ mod tests {
     #[test]
     fn loads_relative_env_file_before_explicit_environment() {
         let directory =
-            env::temp_dir().join(format!("mcp-check-resolution-{}", std::process::id()));
+            env::temp_dir().join(format!("mcp-examiner-resolution-{}", std::process::id()));
         std::fs::create_dir_all(&directory).unwrap();
         std::fs::write(
             directory.join("server.env"),

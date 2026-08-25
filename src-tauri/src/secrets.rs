@@ -6,12 +6,12 @@ use std::{
 };
 
 use keyring::Entry;
-use mcp_check_core::{ResolutionContext, ServerProfile};
+use mcp_examiner_core::{ResolutionContext, ServerProfile};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::{AppHandle, Manager};
 
-const KEYCHAIN_SERVICE: &str = "io.mcpcheck.desktop.secrets";
+const KEYCHAIN_SERVICE: &str = "io.mcpexaminer.desktop.secrets";
 const INDEX_FILENAME: &str = "secrets.json";
 
 #[derive(Debug, Clone, Serialize)]

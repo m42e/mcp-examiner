@@ -2304,11 +2304,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "mcp-check-app"
+name = "mcp-examiner-app"
 version = "0.1.0"
 dependencies = [
  "keyring",
- "mcp-check-core",
+ "mcp-examiner-core",
  "serde",
  "serde_json",
  "tauri",
@@ -2318,17 +2318,17 @@ dependencies = [
 ]
 
 [[package]]
-name = "mcp-check-cli"
+name = "mcp-examiner-cli"
 version = "0.1.0"
 dependencies = [
  "clap",
- "mcp-check-core",
+ "mcp-examiner-core",
  "serde_json",
  "tokio",
 ]
 
 [[package]]
-name = "mcp-check-core"
+name = "mcp-examiner-core"
 version = "0.1.0"
 dependencies = [
  "dotenvy",

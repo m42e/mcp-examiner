@@ -1,10 +1,10 @@
 [package]
-name = "mcp-check-core"
+name = "mcp-examiner-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
-description = "Protocol, configuration, test, and report engine for MCP Check"
+description = "Protocol, configuration, test, and report engine for MCP Examiner"
 
 [dependencies]
 dotenvy.workspace = true

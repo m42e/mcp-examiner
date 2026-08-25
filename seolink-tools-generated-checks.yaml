@@ -682,8 +682,8 @@ httpObservations:
       _meta:
         io.modelcontextprotocol/clientCapabilities: {}
         io.modelcontextprotocol/clientInfo:
-          name: mcp-check
-          title: MCP Check
+          name: mcp-examiner
+          title: MCP Examiner
           version: 0.1.0
         io.modelcontextprotocol/protocolVersion: 2026-07-28
   responseKind: null
@@ -701,8 +701,8 @@ httpObservations:
     params:
       capabilities: {}
       clientInfo:
-        name: mcp-check
-        title: MCP Check
+        name: mcp-examiner
+        title: MCP Examiner
         version: 0.1.0
       protocolVersion: 2025-11-25
   responseKind: json

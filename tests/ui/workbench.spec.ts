@@ -4,7 +4,7 @@ test("renders the desktop workbench and import dialog", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 920 });
   await page.goto("/");
 
-  await expect(page.getByText("MCP Check", { exact: true })).toBeVisible();
+  await expect(page.getByText("MCP Examiner", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "No servers configured" })).toBeVisible();
   await expect(page.getByText("5 revisions")).toBeVisible();
 
@@ -62,9 +62,13 @@ test("imports, connects, and exercises manual server primitives", async ({ page 
       };
     };
     let configWriteCount = 0;
+    let failNextConnection = false;
     let nextCallbackId = 1;
     const storedSecrets = new Map<string, { label: string; value: string }>();
     const callbacks = new Map<number, (payload: unknown) => void>();
+    (window as typeof window & { failNextConnection: () => void }).failNextConnection = () => {
+      failNextConnection = true;
+    };
     runtime.__TAURI_INTERNALS__ = {
       transformCallback: (callback) => {
         const id = nextCallbackId++;
@@ -104,7 +108,7 @@ test("imports, connects, and exercises manual server primitives", async ({ page 
         }
         if (command === "app_info") {
           return {
-            name: "MCP Check",
+            name: "MCP Examiner",
             version: "0.1.0",
             formatVersion: 1,
             protocolVersions: [
@@ -179,6 +183,10 @@ test("imports, connects, and exercises manual server primitives", async ({ page 
           };
         }
         if (command === "connect_server") {
+          if (failNextConnection) {
+            failNextConnection = false;
+            throw new Error("MCP connection failed: automatic discovery failed (modern transport returned HTTP 404 Not Found while requesting server/discover); legacy fallback failed (legacy transport returned HTTP 404 Not Found while sending initialize request)");
+          }
           const context = args?.context as { inputs?: Record<string, string> } | undefined;
           if (context?.inputs?.["api-token"] !== "test-secret") {
             throw new Error("Connection input was not supplied through the resolution context");
@@ -557,4 +565,15 @@ test("imports, connects, and exercises manual server primitives", async ({ page 
   await page.getByRole("button", { name: "Save HTML + YAML" }).click();
   await expect(page.getByText("/tmp/server-smoke-test.html")).toBeVisible();
   await expect(page.getByText("/tmp/server-smoke-test.yaml")).toBeVisible();
+
+  await page.getByRole("button", { name: "Overview" }).click();
+  await page.evaluate(() => window.failNextConnection());
+  await page.getByRole("button", { name: "Connect", exact: true }).click();
+  const connectionToast = page.getByRole("alert");
+  await expect(connectionToast).toContainText("automatic discovery failed");
+  await connectionToast.getByRole("button", { name: "Dismiss connection error" }).click();
+  await expect(connectionToast).toHaveCount(0);
+  await page.getByRole("button", { name: "Console" }).click();
+  await expect(page.getByRole("alert")).toContainText("MCP connection failed: automatic discovery failed");
+  await expect(page.locator(".console-error pre")).toContainText("legacy fallback failed");
 });

@@ -1,18 +1,17 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "MCP Check",
+  "productName": "MCP Examiner",
   "version": "0.1.0",
-  "identifier": "io.mcpcheck.desktop",
+  "identifier": "io.mcpexaminer.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"
   },
   "app": {
     "windows": [
       {
-        "title": "MCP Check",
+        "title": "MCP Examiner",
         "width": 1440,
         "height": 920,
         "minWidth": 1040,

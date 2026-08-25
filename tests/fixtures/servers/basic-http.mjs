@@ -40,7 +40,7 @@ const server = http.createServer((request, response) => {
       return;
     }
 
-    if (request.headers["x-mcp-check"] !== "fixture") {
+    if (request.headers["x-mcp-examiner"] !== "fixture") {
       sendJson(response, 400, {
         jsonrpc: "2.0",
         id: message.id,

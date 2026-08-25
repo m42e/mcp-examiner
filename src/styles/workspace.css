@@ -1,0 +1,227 @@
+.workspace {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.server-header {
+  display: flex;
+  min-height: 104px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 18px 28px;
+  background: rgba(249, 250, 246, 0.92);
+  border-bottom: 1px solid var(--line);
+}
+
+.server-identity {
+  min-width: 0;
+}
+
+.eyebrow {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--accent);
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.server-identity h1,
+.empty-workspace h1 {
+  margin: 0;
+  color: #20231f;
+  font-size: 25px;
+  line-height: 1.25;
+  font-weight: 700;
+}
+
+.server-identity p {
+  max-width: 720px;
+  margin: 5px 0 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.server-actions {
+  flex: none;
+  gap: 10px;
+}
+
+.protocol-select {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto auto 14px;
+  height: 36px;
+  align-items: center;
+  gap: 7px;
+  padding: 0 9px 0 11px;
+  background: #fff;
+  border: 1px solid #ced1c8;
+  border-radius: 5px;
+}
+
+.protocol-select > span,
+.import-controls label > span,
+.config-editor > span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.protocol-select select,
+.import-controls select {
+  appearance: none;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  outline: 0;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.protocol-select select:disabled {
+  color: #73776e;
+  cursor: default;
+}
+
+.spin {
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.primary-button,
+.secondary-button,
+.text-button {
+  display: inline-flex;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 14px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.primary-button {
+  color: #fff;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+}
+
+.primary-button:hover:not(:disabled) {
+  background: var(--accent-dark);
+  border-color: var(--accent-dark);
+}
+
+.primary-button:disabled {
+  color: #a4a79f;
+  background: #e5e7e0;
+  border-color: #d8dad2;
+  cursor: not-allowed;
+}
+
+.secondary-button {
+  color: #353931;
+  background: #fff;
+  border: 1px solid #cfd2c9;
+}
+
+.secondary-button:hover {
+  border-color: #9ba095;
+}
+
+.text-button {
+  color: #6f746b;
+  background: transparent;
+  border: 1px solid transparent;
+}
+
+.text-button:hover {
+  color: var(--ink);
+  background: #eff0eb;
+}
+
+.workspace-tabs {
+  display: flex;
+  height: 43px;
+  align-items: flex-end;
+  gap: 2px;
+  padding: 0 22px;
+  background: #f9faf6;
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+}
+
+.workspace-tabs button {
+  position: relative;
+  display: inline-flex;
+  height: 42px;
+  flex: none;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  color: #777c72;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.workspace-tabs button:hover,
+.workspace-tabs .tab-active {
+  color: #252822;
+}
+
+.tab-count {
+  display: inline-grid;
+  min-width: 20px;
+  height: 18px;
+  place-items: center;
+  padding: 0 5px;
+  color: #656b61;
+  background: #e8eae3;
+  border: 1px solid #d8dbd2;
+  border-radius: 9px;
+  font-size: 8px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.workspace-tabs .tab-active .tab-count {
+  color: #8d3f2f;
+  background: #fbe7e1;
+  border-color: #efc7bc;
+}
+
+.workspace-tabs .tab-active::after {
+  position: absolute;
+  right: 9px;
+  bottom: -1px;
+  left: 9px;
+  height: 2px;
+  background: var(--accent);
+  content: "";
+}
+
+.workspace-content {
+  height: calc(100% - 147px);
+  overflow: auto;
+  padding: 24px 28px 36px;
+}
+
