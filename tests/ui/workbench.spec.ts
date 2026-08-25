@@ -39,6 +39,18 @@ test("keeps primary controls inside a narrow viewport", async ({ page }) => {
   await page.screenshot({ path: "test-results/workbench-narrow.png" });
 });
 
+test("opens the managed secrets dialog from the server rail", async ({ page }) => {
+  await page.setViewportSize({ width: 720, height: 820 });
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Manage secrets" }).click();
+  const secretsDialog = page.getByRole("dialog", { name: "Managed secrets" });
+  await expect(secretsDialog).toBeVisible();
+  await expect(secretsDialog.getByText("No managed secrets")).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await page.screenshot({ path: "test-results/secrets-narrow.png" });
+});
+
 test("imports, connects, and exercises manual server primitives", async ({ page }) => {
   await page.addInitScript(() => {
     const runtime = window as typeof window & {
@@ -51,6 +63,7 @@ test("imports, connects, and exercises manual server primitives", async ({ page 
     };
     let configWriteCount = 0;
     let nextCallbackId = 1;
+    const storedSecrets = new Map<string, { label: string; value: string }>();
     const callbacks = new Map<number, (payload: unknown) => void>();
     runtime.__TAURI_INTERNALS__ = {
       transformCallback: (callback) => {
@@ -83,7 +96,7 @@ test("imports, connects, and exercises manual server primitives", async ({ page 
           const request = args?.request as { path: string; content: string };
           if (request.path.endsWith(".json")) {
             configWriteCount += 1;
-            if (configWriteCount === 1 && (!request.content.includes('"direct-server"') || !request.content.includes("https://edited.test/mcp"))) {
+            if (configWriteCount === 1 && (!request.content.includes('"direct-server"') || !request.content.includes("https://edited.test/mcp") || !request.content.includes("${secret:direct-server-authorization}"))) {
               throw new Error("Persistent config save did not serialize the live server list");
             }
           }
@@ -102,6 +115,33 @@ test("imports, connects, and exercises manual server primitives", async ({ page 
               "2026-07-28",
             ],
           };
+        }
+        if (command === "list_secrets") {
+          return [...storedSecrets].map(([id, secret]) => ({
+            id,
+            label: secret.label,
+            updatedAtUnixMs: 1,
+            available: true,
+          }));
+        }
+        if (command === "set_secret") {
+          const request = args?.request as { id: string; label: string; value: string };
+          storedSecrets.set(request.id, { label: request.label, value: request.value });
+          return {
+            id: request.id,
+            label: request.label,
+            updatedAtUnixMs: 1,
+            available: true,
+          };
+        }
+        if (command === "get_secret") {
+          const secret = storedSecrets.get(args?.id as string);
+          if (secret === undefined) throw new Error("Secret is unavailable");
+          return secret.value;
+        }
+        if (command === "delete_secret") {
+          storedSecrets.delete(args?.id as string);
+          return null;
         }
         if (command === "import_config_preview") {
           return {
@@ -158,10 +198,25 @@ test("imports, connects, and exercises manual server primitives", async ({ page 
                 inputSchema: {
                   type: "object",
                   properties: {
-                    message: { type: "string" },
-                    mode: { type: "string", enum: ["fast", "thorough"] },
-                    count: { type: "integer", default: 2 },
-                    enabled: { type: "boolean", default: true },
+                    message: {
+                      type: "string",
+                      description: "The message to return in the tool response.",
+                    },
+                    mode: {
+                      type: "string",
+                      enum: ["fast", "thorough"],
+                      description: "Choose how much processing the tool should perform.",
+                    },
+                    count: {
+                      type: "integer",
+                      default: 2,
+                      description: "Maximum number of results to return in one pass.",
+                    },
+                    enabled: {
+                      type: "boolean",
+                      default: true,
+                      description: "Include optional output in the response.",
+                    },
                   },
                 },
                 outputSchema: null,
@@ -292,6 +347,7 @@ test("imports, connects, and exercises manual server primitives", async ({ page 
               requestHeaders: { authorization: "[REDACTED]" },
               requestBody: { method: "tools/call" },
               responseKind: "json",
+              responseBody: { jsonrpc: "2.0", result: { content: [{ text: "hello" }] } },
               sessionId: "fixture-session",
               error: null,
             },
@@ -313,6 +369,10 @@ test("imports, connects, and exercises manual server primitives", async ({ page 
   const addDialog = page.getByRole("dialog", { name: "Add MCP server" });
   await addDialog.getByLabel("Name").fill("direct-server");
   await addDialog.getByLabel("URL", { exact: true }).fill("https://direct.test/mcp");
+  await addDialog.getByRole("button", { name: "Add headers" }).click();
+  await addDialog.getByLabel("Headers key 1").fill("Authorization");
+  await addDialog.getByLabel("Headers value 1").fill("direct-secret");
+  await addDialog.getByLabel("Mark Headers 1 as secret").check();
   await addDialog.getByRole("button", { name: "Save server" }).click();
   await expect(page.getByRole("heading", { name: "direct-server" })).toBeVisible();
 
@@ -334,9 +394,7 @@ test("imports, connects, and exercises manual server primitives", async ({ page 
   await page.getByRole("button", { name: "Import 1" }).click();
 
   await page.getByRole("button", { name: "Connect", exact: true }).click();
-  const trustDialog = page.getByRole("dialog", { name: "Start local server" });
-  await expect(trustDialog).toBeVisible();
-  await trustDialog.getByRole("button", { name: "Start", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Start local server" })).toHaveCount(0);
   const resolutionDialog = page.getByRole("dialog", { name: "Connect to fixture" });
   await expect(resolutionDialog).toBeVisible();
   const tokenInput = page.getByLabel("API token");
@@ -344,6 +402,30 @@ test("imports, connects, and exercises manual server primitives", async ({ page 
   await tokenInput.fill("test-secret");
   await resolutionDialog.locator('button[type="submit"]').click();
   await expect(page.getByText("Connected / 2025-11-25")).toBeVisible();
+  await page.getByRole("button", { name: "Manage secrets" }).click();
+  const secretsDialog = page.getByRole("dialog", { name: "Managed secrets" });
+  await expect(secretsDialog.locator(".secret-row").filter({ hasText: "api-token" })).toBeVisible();
+  await expect(secretsDialog.getByText("********", { exact: true }).first()).toBeVisible();
+  await secretsDialog.getByRole("button", { name: "Close" }).click();
+  await page.getByRole("button", { name: "Manage secrets" }).click();
+  const managedSecrets = page.getByRole("dialog", { name: "Managed secrets" });
+  await managedSecrets.getByRole("button", { name: "Add secret" }).click();
+  await managedSecrets.getByLabel("Secret ID").fill("release-token");
+  await managedSecrets.getByLabel("Label").fill("Release token");
+  await managedSecrets.getByLabel("Value").fill("release-secret");
+  await managedSecrets.getByRole("button", { name: "Save secret" }).click();
+  const releaseRow = managedSecrets.locator(".secret-row").filter({ hasText: "release-token" });
+  await expect(releaseRow).toContainText("Release token");
+  await releaseRow.getByRole("button", { name: "Reveal Release token" }).click();
+  await expect(releaseRow.getByText("release-secret", { exact: true })).toBeVisible();
+  await releaseRow.getByRole("button", { name: "Edit Release token" }).click();
+  await managedSecrets.getByLabel("Replacement value").fill("replacement-secret");
+  await managedSecrets.getByRole("button", { name: "Save secret" }).click();
+  await expect(releaseRow.getByText("********", { exact: true })).toBeVisible();
+  page.once("dialog", (dialog) => void dialog.accept());
+  await releaseRow.getByRole("button", { name: "Delete Release token" }).click();
+  await expect(releaseRow).toHaveCount(0);
+  await managedSecrets.getByRole("button", { name: "Close" }).click();
   await expect(page.getByRole("heading", { name: "Echo" })).toBeVisible();
   await expect(page.getByLabel("1 tools")).toBeVisible();
   await expect(page.getByLabel("1 resources")).toBeVisible();
@@ -381,10 +463,33 @@ test("imports, connects, and exercises manual server primitives", async ({ page 
   await expect(page.getByLabel("2 tests")).toBeVisible();
   await page.getByRole("button", { name: "Tools" }).click();
 
-  await page.getByLabel("message", { exact: true }).fill("hello");
-  await page.getByLabel("mode").selectOption({ label: "thorough" });
-  await page.getByLabel("count").fill("3");
-  await expect(page.getByLabel("enabled")).toBeChecked();
+  const argumentLayout = await page.locator(".schema-fields").first().evaluate((form) => ({
+    fits: form.scrollWidth <= form.clientWidth,
+    fields: [...form.querySelectorAll(":scope > .schema-field")].map((field) => {
+      const label = field.querySelector(":scope > span")?.getBoundingClientRect();
+      const description = field.querySelector(":scope > small")?.getBoundingClientRect();
+      const control = field.querySelector(":scope > input, :scope > select")?.getBoundingClientRect();
+      const bounds = field.getBoundingClientRect();
+      return {
+        stacked: Boolean(label && control && control.top >= (description?.bottom ?? label.bottom)),
+        contained: Boolean(control && control.left >= bounds.left && control.right <= bounds.right + 1),
+      };
+    }),
+  }));
+  expect(argumentLayout.fits).toBe(true);
+  expect(argumentLayout.fields.every((field) => field.stacked && field.contained)).toBe(true);
+  await page.screenshot({ path: "test-results/workbench-tools.png" });
+
+  await page.setViewportSize({ width: 720, height: 820 });
+  expect(await page.locator(".tool-detail").evaluate((detail) => detail.scrollWidth <= detail.clientWidth)).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await page.screenshot({ path: "test-results/workbench-tools-narrow.png" });
+  await page.setViewportSize({ width: 1440, height: 920 });
+
+  await page.getByRole("textbox", { name: /^message\b/ }).fill("hello");
+  await page.getByRole("combobox", { name: /^mode\b/ }).selectOption({ label: "thorough" });
+  await page.getByRole("spinbutton", { name: /^count\b/ }).fill("3");
+  await expect(page.getByRole("checkbox", { name: /^enabled\b/ })).toBeChecked();
   await page.getByRole("button", { name: "Run tool" }).click();
   await expect(page.getByText("hello", { exact: true })).toBeVisible();
   const contentField = page.locator(".result-field").filter({ hasText: "content" });
@@ -405,7 +510,11 @@ test("imports, connects, and exercises manual server primitives", async ({ page 
   await expect(page.getByText("tools/call", { exact: true })).toBeVisible();
 
   await page.getByRole("button", { name: "Network" }).click();
-  await expect(page.getByText(/json \/ https:\/\/example\.test\/mcp/)).toBeVisible();
+  const networkObservation = page.locator(".protocol-events details").first();
+  await expect(networkObservation).toContainText("json / https://example.test/mcp");
+  await networkObservation.locator("summary").click();
+  await expect(networkObservation.getByRole("heading", { name: "Response" })).toBeVisible();
+  await expect(networkObservation.getByText(/\"text\": \"hello\"/)).toBeVisible();
 
   await page.screenshot({ path: "test-results/workbench-connected.png" });
   await page.getByRole("button", { name: "Disconnect", exact: true }).click();
@@ -438,6 +547,11 @@ test("imports, connects, and exercises manual server primitives", async ({ page 
   await expect(page.locator(".call-running")).toBeVisible();
   await expect(page.getByLabel("Run progress")).toBeVisible();
   await expect(page.getByText("1 passed")).toBeVisible();
+  await page.locator(".run-calls summary").click();
+  await expect(page.getByText('response contains "hello"')).toBeVisible();
+  await page.getByRole("button", { name: "Overview" }).click();
+  await page.getByRole("button", { name: "Tests" }).click();
+  await expect(page.locator(".run-summary strong")).toHaveText("passed");
   await page.locator(".run-calls summary").click();
   await expect(page.getByText('response contains "hello"')).toBeVisible();
   await page.getByRole("button", { name: "Save HTML + YAML" }).click();

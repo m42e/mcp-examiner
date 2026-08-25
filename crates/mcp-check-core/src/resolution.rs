@@ -14,6 +14,8 @@ pub struct ResolutionContext {
     pub environment: BTreeMap<String, String>,
     #[serde(default)]
     pub inputs: BTreeMap<String, String>,
+    #[serde(default)]
+    pub secrets: BTreeMap<String, String>,
 }
 
 impl ResolutionContext {
@@ -24,6 +26,7 @@ impl ResolutionContext {
                 .map(|path| path.to_string_lossy().into_owned()),
             environment: env::vars().collect(),
             inputs: BTreeMap::new(),
+            secrets: BTreeMap::new(),
         }
     }
 }
@@ -34,6 +37,8 @@ pub enum ResolutionError {
     MissingWorkspaceFolder,
     #[error("missing configuration input '{0}'")]
     MissingInput(String),
+    #[error("missing managed secret '{0}'")]
+    MissingSecret(String),
     #[error("missing environment variable '{0}'")]
     MissingEnvironment(String),
     #[error("unterminated variable expression in configuration field")]
@@ -78,6 +83,7 @@ pub fn resolve_profile(
                 workspace_folder: context.workspace_folder.clone(),
                 environment: environment.clone(),
                 inputs: context.inputs.clone(),
+                secrets: context.secrets.clone(),
             };
             let explicit_env = env
                 .iter()
@@ -124,8 +130,15 @@ pub fn resolve_profile(
             url: resolve_string(url, context)?,
             headers: resolve_map(headers, context)?,
             oauth: resolve_oauth(oauth.as_ref(), context)?,
-        },
-        TransportConfig::Websocket { url, headers } => TransportConfig::Websocket {
+        },        TransportConfig::Auto {
+            url,
+            headers,
+            oauth,
+         } => TransportConfig::Auto {
+            url: resolve_string(url, context)?,
+            headers: resolve_map(headers, context)?,
+            oauth: resolve_oauth(oauth.as_ref(), context)?,
+         },        TransportConfig::Websocket { url, headers } => TransportConfig::Websocket {
             url: resolve_string(url, context)?,
             headers: resolve_map(headers, context)?,
         },
@@ -215,6 +228,13 @@ fn resolve_expression(
             .cloned()
             .ok_or_else(|| ResolutionError::MissingInput(id.to_owned()));
     }
+    if let Some(id) = expression.strip_prefix("secret:") {
+        return context
+            .secrets
+            .get(id)
+            .cloned()
+            .ok_or_else(|| ResolutionError::MissingSecret(id.to_owned()));
+    }
     if let Some(name) = expression.strip_prefix("env:") {
         return environment_value(name, None, context);
     }
@@ -279,6 +299,7 @@ mod tests {
             workspace_folder: Some("/project".to_owned()),
             environment: BTreeMap::from([("RUNTIME".to_owned(), "node".to_owned())]),
             inputs: BTreeMap::from([("token".to_owned(), "secret-value".to_owned())]),
+            secrets: BTreeMap::new(),
         };
 
         let resolved = resolve_profile(&profile(), &context).unwrap();
@@ -301,6 +322,57 @@ mod tests {
     }
 
     #[test]
+    fn resolves_managed_secret_references() {
+        let mut profile = profile();
+        let TransportConfig::Stdio { args, .. } = &mut profile.transport else {
+            panic!("expected stdio")
+        };
+        args.push("${secret:api-token}".to_owned());
+
+        let resolved = resolve_profile(
+            &profile,
+            &ResolutionContext {
+                workspace_folder: Some("/project".to_owned()),
+                environment: BTreeMap::from([("RUNTIME".to_owned(), "node".to_owned())]),
+                inputs: BTreeMap::from([("token".to_owned(), "secret-value".to_owned())]),
+                secrets: BTreeMap::from([("api-token".to_owned(), "managed-secret".to_owned())]),
+            },
+        )
+        .unwrap();
+
+        let TransportConfig::Stdio { args, .. } = resolved.transport else {
+            panic!("expected stdio")
+        };
+        assert_eq!(args.last().map(String::as_str), Some("managed-secret"));
+    }
+
+    #[test]
+    fn reports_missing_managed_secret_without_exposing_a_value() {
+        let mut profile = profile();
+        let TransportConfig::Stdio { args, .. } = &mut profile.transport else {
+            panic!("expected stdio")
+        };
+        args.push("${secret:missing-token}".to_owned());
+
+        let error = resolve_profile(
+            &profile,
+            &ResolutionContext {
+                workspace_folder: Some("/project".to_owned()),
+                environment: BTreeMap::from([("RUNTIME".to_owned(), "node".to_owned())]),
+                inputs: BTreeMap::from([("token".to_owned(), "secret-value".to_owned())]),
+                secrets: BTreeMap::new(),
+            },
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            ResolutionError::MissingSecret("missing-token".to_owned())
+        );
+        assert_eq!(error.to_string(), "missing managed secret 'missing-token'");
+    }
+
+    #[test]
     fn reports_missing_input_without_exposing_other_values() {
         let error = resolve_profile(
             &profile(),
@@ -308,6 +380,7 @@ mod tests {
                 workspace_folder: Some("/project".to_owned()),
                 environment: BTreeMap::from([("RUNTIME".to_owned(), "node".to_owned())]),
                 inputs: BTreeMap::new(),
+                secrets: BTreeMap::new(),
             },
         )
         .unwrap_err();
@@ -343,6 +416,7 @@ mod tests {
             workspace_folder: Some(directory.to_string_lossy().into_owned()),
             environment: BTreeMap::new(),
             inputs: BTreeMap::from([("token".to_owned(), "secret-value".to_owned())]),
+            secrets: BTreeMap::new(),
         };
 
         let resolved = resolve_profile(&profile, &context).unwrap();

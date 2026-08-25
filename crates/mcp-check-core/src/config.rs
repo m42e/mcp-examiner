@@ -172,13 +172,16 @@ fn parse_server(name: &str, server: &Map<String, Value>) -> Result<TransportConf
             url: required_string(server, "url", name)?,
             headers: string_map(server.get("headers"), "headers", name)?,
             oauth: parse_oauth(server.get("oauth"), name)?,
-        }),
-        "ws" | "websocket" => Ok(TransportConfig::Websocket {
+        }),        "auto" => Ok(TransportConfig::Auto {
+            url: required_string(server, "url", name)?,
+            headers: string_map(server.get("headers"), "headers", name)?,
+            oauth: parse_oauth(server.get("oauth"), name)?,
+         }),        "ws" | "websocket" => Ok(TransportConfig::Websocket {
             url: required_string(server, "url", name)?,
             headers: string_map(server.get("headers"), "headers", name)?,
         }),
         "" if server.contains_key("url") => {
-            Err("URL-based server is missing type; expected http, sse, or ws".to_owned())
+            Err("URL-based server is missing type; expected http, sse, auto, or ws".to_owned())
         }
         other => Err(format!("Unsupported transport type '{other}'")),
     }
@@ -518,8 +521,21 @@ mod tests {
         assert!(result.diagnostics[0].message.contains("missing type"));
     }
 
-    #[test]
-    fn defaults_imported_servers_to_protocol_auto_negotiation() {
+    #[test]    fn imports_auto_transport_as_auto_detected_http() {
+        let result = import_config(
+            r#"{"mcpServers":{"remote":{"type":"auto","url":"https://example.test/mcp","headers":{"Authorization":"Bearer ${secret:token}"}}}}"#,
+            ConfigSourceKind::Auto,
+            None,
+         )
+         .unwrap();
+
+        assert!(matches!(
+            result.profiles[0].transport,
+            TransportConfig::Auto { .. }
+         ));
+     }
+
+     #[test]    fn defaults_imported_servers_to_protocol_auto_negotiation() {
         let result = import_config(
             r#"{"mcpServers":{"remote":{"type":"http","url":"https://example.test/mcp"}}}"#,
             ConfigSourceKind::Auto,

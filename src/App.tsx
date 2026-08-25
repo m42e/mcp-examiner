@@ -13,6 +13,8 @@ import {
   CircleDot,
   ClipboardCheck,
   Download,
+  Eye,
+  EyeOff,
   FileCode2,
   FileInput,
   FileUp,
@@ -58,6 +60,7 @@ import type {
   ResourceSummary,
   ResourceTemplateSummary,
   SaveReportResponse,
+  SecretSummary,
   ToolSummary,
   TransportConfig,
 } from "./contracts";
@@ -110,7 +113,27 @@ type LiveRunState = {
   connectionError: string | null;
 };
 
-type KeyValueEntry = { key: string; value: string };
+type TestRunState = {
+  run: AutomatedRunResponse | null;
+  liveRun: LiveRunState | null;
+  isRunning: boolean;
+  reportPath: string;
+  savedReports: SaveReportResponse | null;
+};
+
+type TestRunStateUpdate = TestRunState | ((current: TestRunState) => TestRunState);
+
+function emptyTestRunState(): TestRunState {
+  return {
+    run: null,
+    liveRun: null,
+    isRunning: false,
+    reportPath: "mcp-check-report.html",
+    savedReports: null,
+  };
+}
+
+type KeyValueEntry = { key: string; value: string; secret: boolean; secretId: string };
 
 type ServerDraft = {
   name: string;
@@ -167,8 +190,8 @@ function transportLabel(transport: TransportConfig) {
       return "Streamable HTTP";
     case "sse":
       return "HTTP + SSE";
-    case "websocket":
-      return "WebSocket";
+    case "auto":
+      return "Auto-detect";
   }
 }
 
@@ -212,8 +235,25 @@ function referencedInputIds(profile: ServerProfile) {
   return ids;
 }
 
+function referencedSecretIds(profile: ServerProfile) {
+  const ids = new Set<string>();
+  for (const match of JSON.stringify(profile).matchAll(/\$\{secret:([^}]+)\}/g)) {
+    ids.add(match[1]);
+  }
+  return ids;
+}
+
 function keyValueEntries(values: Record<string, unknown>) {
-  return Object.entries(values).map(([key, value]) => ({ key, value: String(value) }));
+  return Object.entries(values).map(([key, value]) => {
+    const stringValue = String(value);
+    const secretMatch = stringValue.match(/^\$\{secret:([^}]+)\}$/);
+    return {
+      key,
+      value: secretMatch ? "" : stringValue,
+      secret: Boolean(secretMatch),
+      secretId: secretMatch?.[1] ?? "",
+    };
+  });
 }
 
 function emptyServerDraft(): ServerDraft {
@@ -264,7 +304,13 @@ function profileDraft(profile: ServerProfile): ServerDraft {
 }
 
 function entriesObject(entries: KeyValueEntry[]) {
-  return Object.fromEntries(entries.filter((entry) => entry.key.trim()).map((entry) => [entry.key.trim(), entry.value]));
+  return Object.fromEntries(entries.filter((entry) => entry.key.trim()).map((entry) => {
+    const key = entry.key.trim();
+    if (!entry.secret) return [key, entry.value];
+    const secretId = entry.secretId.trim();
+    if (!secretId) throw new Error(`Secret ID is required for '${key}'.`);
+    return [key, `\${secret:${secretId}}`];
+  }));
 }
 
 function draftProfile(draft: ServerDraft, sourcePath: string | null): ServerProfile {
@@ -367,19 +413,24 @@ function App() {
   const [protocolCounts, setProtocolCounts] = useState<Record<string, number>>({});
   const [testCounts, setTestCounts] = useState<Record<string, number>>({});
   const [testDocuments, setTestDocuments] = useState<Record<string, TestDocument>>({});
+  const [testRuns, setTestRuns] = useState<Record<string, TestRunState>>({});
   const [profileInputs, setProfileInputs] = useState<
     Record<string, ConfigInputDefinition[]>
   >({});
   const [resolutionRequest, setResolutionRequest] = useState<{
     profile: ServerProfile;
     inputs: ConfigInputDefinition[];
+    storedSecretIds: string[];
   } | null>(null);
-  const [trustRequest, setTrustRequest] = useState<ServerProfile | null>(null);
   const [serverEditor, setServerEditor] = useState<ServerEditorState | null>(null);
+  const [secrets, setSecrets] = useState<SecretSummary[]>([]);
+  const [secretError, setSecretError] = useState<string | null>(null);
+  const [showSecrets, setShowSecrets] = useState(false);
 
   useEffect(() => {
     if (!isTauriRuntime()) return;
     invoke<AppInfo>("app_info").then(setAppInfo).catch(() => undefined);
+    void refreshSecrets();
   }, []);
 
   const selectedProfile =
@@ -387,6 +438,9 @@ function App() {
   const selectedConnection = selectedName ? connections[selectedName] : null;
   const selectedTestDocument = selectedProfile
     ? testDocuments[selectedProfile.name] ?? { content: exampleTestSet, path: null }
+    : null;
+  const selectedTestRun = selectedProfile
+    ? testRuns[selectedProfile.name] ?? emptyTestRunState()
     : null;
 
   const tabCounts: Partial<Record<TabId, number>> = selectedProfile
@@ -408,6 +462,24 @@ function App() {
       profile.name.toLowerCase().includes(normalizedQuery),
     );
   }, [profiles, query]);
+
+  async function refreshSecrets() {
+    if (!isTauriRuntime()) {
+      setSecretError("Secret management requires the MCP Check desktop runtime.");
+      return;
+    }
+    try {
+      setSecrets(await invoke<SecretSummary[]>("list_secrets"));
+      setSecretError(null);
+    } catch (error) {
+      setSecretError(String(error));
+    }
+  }
+
+  function openSecrets() {
+    setShowSecrets(true);
+    void refreshSecrets();
+  }
 
   async function previewImport() {
     setIsImporting(true);
@@ -548,7 +620,7 @@ function App() {
     }
   }
 
-  function saveServerDraft(draft: ServerDraft, originalName: string | null) {
+  async function saveServerDraft(draft: ServerDraft, originalName: string | null) {
     const profile = draftProfile(draft, importPath);
     if (!profile.name) throw new Error("Server name is required.");
     if (profile.transport.type === "stdio" && !profile.transport.command) {
@@ -559,6 +631,20 @@ function App() {
     }
     if (profiles.some((candidate) => candidate.name === profile.name && candidate.name !== originalName)) {
       throw new Error(`A server named '${profile.name}' already exists.`);
+    }
+    const secretEntries = (draft.transportType === "stdio" ? draft.env : draft.headers)
+      .filter((entry) => entry.secret && entry.key.trim() && entry.value);
+    for (const entry of secretEntries) {
+      if (!isTauriRuntime()) {
+        throw new Error("Secret storage requires the MCP Check desktop runtime.");
+      }
+      await invoke<SecretSummary>("set_secret", {
+        request: {
+          id: entry.secretId.trim(),
+          label: `${profile.name} / ${entry.key.trim()}`,
+          value: entry.value,
+        },
+      });
     }
     setProfiles((current) => originalName
       ? current.map((candidate) => candidate.name === originalName ? profile : candidate)
@@ -574,6 +660,12 @@ function App() {
         delete next[originalName];
         return next;
       });
+      setTestRuns((current) => {
+        const next = { ...current };
+        if (current[originalName]) next[profile.name] = current[originalName];
+        delete next[originalName];
+        return next;
+      });
     } else if (!originalName) {
       setTestDocuments((current) => ({ ...current, [profile.name]: { content: exampleTestSet, path: null } }));
       setTestCounts((current) => ({ ...current, [profile.name]: 1 }));
@@ -581,6 +673,7 @@ function App() {
     setSelectedName(profile.name);
     setActiveTab("overview");
     setServerEditor(null);
+    if (secretEntries.length > 0) void refreshSecrets();
   }
 
   function updateProtocol(value: string) {
@@ -597,21 +690,98 @@ function App() {
   async function connectSelected() {
     if (!selectedProfile || !isTauriRuntime()) return;
 
-    if (!selectedProfile.trusted) {
-      setTrustRequest(selectedProfile);
-      return;
+    let profile = selectedProfile;
+    if (!profile.trusted) {
+      profile = { ...profile, trusted: true };
+      setProfiles((current) =>
+        current.map((candidate) =>
+          candidate.name === profile.name ? profile : candidate,
+        ),
+      );
     }
 
-    await continueConnection(selectedProfile);
+    await continueConnection(profile);
   }
 
   async function continueConnection(profile: ServerProfile) {
     const inputs = profileInputs[profile.name] ?? [];
-    if (inputs.length > 0) {
-      setResolutionRequest({ profile, inputs });
+    let availableSecretIds = new Set<string>();
+    if (isTauriRuntime()) {
+      try {
+        const storedSecrets = await invoke<SecretSummary[]>("list_secrets");
+        setSecrets(storedSecrets);
+        setSecretError(null);
+        availableSecretIds = new Set(
+          storedSecrets.filter((secret) => secret.available).map((secret) => secret.id),
+        );
+      } catch (error) {
+        setSecretError(String(error));
+        setConnectionError(String(error));
+        return;
+      }
+    }
+
+    const resolutionInputs = inputs.filter(
+      (input) => !input.secret || !availableSecretIds.has(input.id),
+    );
+    const knownInputIds = new Set(inputs.map((input) => input.id));
+    const requestedInputIds = new Set(resolutionInputs.map((input) => input.id));
+    for (const id of referencedSecretIds(profile)) {
+      if (!availableSecretIds.has(id) && !requestedInputIds.has(id)) {
+        resolutionInputs.push({
+          id,
+          kind: "prompt",
+          description: `Managed secret: ${id}`,
+          secret: true,
+          defaultValue: null,
+          options: [],
+        });
+        requestedInputIds.add(id);
+      }
+    }
+    for (const id of referencedInputIds(profile)) {
+      if (!availableSecretIds.has(id) && !requestedInputIds.has(id) && !knownInputIds.has(id)) {
+        resolutionInputs.push({
+          id,
+          kind: "prompt",
+          description: `Configuration input: ${id}`,
+          secret: true,
+          defaultValue: null,
+          options: [],
+        });
+        requestedInputIds.add(id);
+      }
+    }
+
+    if (resolutionInputs.length > 0) {
+      setResolutionRequest({
+        profile,
+        inputs: resolutionInputs,
+        storedSecretIds: [...availableSecretIds],
+      });
       return;
     }
     await connectProfile(profile, {});
+  }
+
+  async function connectWithResolution(
+    request: { profile: ServerProfile; inputs: ConfigInputDefinition[] },
+    values: Record<string, string>,
+  ) {
+    for (const input of request.inputs) {
+      const value = values[input.id];
+      if (input.secret && value) {
+        await invoke<SecretSummary>("set_secret", {
+          request: {
+            id: input.id,
+            label: input.description || input.id,
+            value,
+          },
+        });
+      }
+    }
+    await refreshSecrets();
+    await connectProfile(request.profile, values);
   }
 
   async function connectProfile(
@@ -667,6 +837,14 @@ function App() {
     } catch {
       setProtocolCounts((current) => ({ ...current, [serverName]: 0 }));
     }
+  }
+
+  function updateTestRun(serverName: string, update: TestRunStateUpdate) {
+    setTestRuns((current) => {
+      const existing = current[serverName] ?? emptyTestRunState();
+      const next = typeof update === "function" ? update(existing) : update;
+      return { ...current, [serverName]: next };
+    });
   }
 
   return (
@@ -750,10 +928,10 @@ function App() {
           )}
         </div>
 
-        <div className="rail-footer">
+        <button className="rail-footer" type="button" onClick={openSecrets} aria-label="Manage secrets" title="Manage secrets">
           <KeyRound size={14} />
-          <span>Secrets stay local</span>
-        </div>
+          <span>Manage secrets</span>
+        </button>
       </aside>
 
       <main className="workspace">
@@ -881,6 +1059,7 @@ function App() {
                   profile={selectedProfile}
                   snapshot={selectedConnection}
                   document={selectedTestDocument}
+                  runState={selectedTestRun ?? emptyTestRunState()}
                   onDocumentChange={(document) =>
                     setTestDocuments((current) => ({
                       ...current,
@@ -893,6 +1072,7 @@ function App() {
                       [selectedProfile.name]: count,
                     }))
                   }
+                  onRunStateChange={(update) => updateTestRun(selectedProfile.name, update)}
                   onRunComplete={() =>
                     void refreshProtocolCount(selectedProfile.name).then(() =>
                       setConnections((current) => {
@@ -948,33 +1128,27 @@ function App() {
         <ServerDialog
           state={serverEditor}
           protocolVersions={appInfo.protocolVersions}
+          secrets={secrets}
           onChange={setServerEditor}
           onSave={saveServerDraft}
           onClose={() => setServerEditor(null)}
+        />
+      )}
+      {showSecrets && (
+        <SecretsDialog
+          secrets={secrets}
+          error={secretError}
+          onChanged={refreshSecrets}
+          onClose={() => setShowSecrets(false)}
         />
       )}
       {resolutionRequest && (
         <ResolutionDialog
           serverName={resolutionRequest.profile.name}
           inputs={resolutionRequest.inputs}
-          onConnect={(values) => connectProfile(resolutionRequest.profile, values)}
+          storedSecretIds={resolutionRequest.storedSecretIds}
+          onConnect={(values) => connectWithResolution(resolutionRequest, values)}
           onClose={() => setResolutionRequest(null)}
-        />
-      )}
-      {trustRequest && (
-        <TrustDialog
-          profile={trustRequest}
-          onApprove={() => {
-            const profile = { ...trustRequest, trusted: true };
-            setTrustRequest(null);
-            setProfiles((current) =>
-              current.map((candidate) =>
-                candidate.name === profile.name ? profile : candidate,
-              ),
-            );
-            void continueConnection(profile);
-          }}
-          onClose={() => setTrustRequest(null)}
         />
       )}
       {connectionError && (
@@ -1935,7 +2109,16 @@ function NetworkPanel({
                 <b>{event.method}</b>
                 <code>{event.responseKind ?? "error"} / {event.url}</code>
               </summary>
-              <pre>{JSON.stringify({ headers: event.requestHeaders, body: event.requestBody, sessionId: event.sessionId, error: event.error }, null, 2)}</pre>
+              <div className="network-evidence">
+                <section>
+                  <h3>Request</h3>
+                  <pre>{JSON.stringify({ headers: event.requestHeaders, body: event.requestBody }, null, 2)}</pre>
+                </section>
+                <section>
+                  <h3>Response</h3>
+                  <pre>{JSON.stringify({ body: event.responseBody ?? null, sessionId: event.sessionId, error: event.error }, null, 2)}</pre>
+                </section>
+              </div>
             </details>
           ))}
         </div>
@@ -2031,27 +2214,27 @@ function AutomationPanel({
   profile,
   snapshot,
   document,
+  runState,
   onDocumentChange,
   onCountChange,
+  onRunStateChange,
   onRunComplete,
 }: {
   profile: ServerProfile;
   snapshot: ConnectionSnapshot | null;
   document: TestDocument;
+  runState: TestRunState;
   onDocumentChange: (document: TestDocument) => void;
   onCountChange: (count: number) => void;
+  onRunStateChange: (update: TestRunStateUpdate) => void;
   onRunComplete: () => void;
 }) {
   const { content, path: testPath } = document;
   const [validation, setValidation] = useState<string | null>(null);
-  const [run, setRun] = useState<AutomatedRunResponse | null>(null);
-  const [liveRun, setLiveRun] = useState<LiveRunState | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isRunning, setIsRunning] = useState(false);
-  const [reportPath, setReportPath] = useState("mcp-check-report.html");
-  const [savedReports, setSavedReports] = useState<SaveReportResponse | null>(null);
   const [showGeneration, setShowGeneration] = useState(false);
   const [generationSelection, setGenerationSelection] = useState<string[]>([]);
+  const { run, liveRun, isRunning, reportPath, savedReports } = runState;
 
   const availableGenerationItems = snapshot ? generationItems(snapshot) : [];
   const generatedCallCount = availableGenerationItems.length;
@@ -2064,8 +2247,7 @@ function AutomationPanel({
       path: testPath,
     });
     setValidation(null);
-    setRun(null);
-    setSavedReports(null);
+    onRunStateChange((current) => ({ ...current, run: null, liveRun: null, savedReports: null }));
     setError(null);
     setShowGeneration(false);
   }
@@ -2109,8 +2291,7 @@ function AutomationPanel({
         path,
       });
       setValidation(null);
-      setRun(null);
-      setSavedReports(null);
+      onRunStateChange((current) => ({ ...current, run: null, liveRun: null, savedReports: null }));
       setError(null);
     } catch (loadError) {
       setError(String(loadError));
@@ -2135,45 +2316,63 @@ function AutomationPanel({
   }
 
   async function execute() {
-    setIsRunning(true);
+    onRunStateChange((current) => ({
+      ...current,
+      isRunning: true,
+      run: null,
+      liveRun: null,
+      savedReports: null,
+    }));
     setError(null);
-    setRun(null);
-    setLiveRun(null);
-    setSavedReports(null);
     try {
       const onProgress = new Channel<RunProgress>();
       onProgress.onmessage = (progress) => {
         switch (progress.event) {
           case "started":
-            setLiveRun({
-              name: progress.name,
-              total: progress.total,
-              protocolVersion: null,
-              summary: { total: progress.total, passed: 0, failed: 0, errors: 0 },
-              calls: progress.calls.map((call) => ({ ...call, status: "pending" })),
-              connectionError: null,
-            });
+            onRunStateChange((current) => ({
+              ...current,
+              liveRun: {
+                name: progress.name,
+                total: progress.total,
+                protocolVersion: null,
+                summary: { total: progress.total, passed: 0, failed: 0, errors: 0 },
+                calls: progress.calls.map((call) => ({ ...call, status: "pending" })),
+                connectionError: null,
+              },
+            }));
             break;
           case "connected":
-            setLiveRun((current) => current ? { ...current, protocolVersion: progress.protocolVersion } : current);
+            onRunStateChange((current) => current.liveRun ? {
+              ...current,
+              liveRun: { ...current.liveRun, protocolVersion: progress.protocolVersion },
+            } : current);
             break;
           case "callStarted":
-            setLiveRun((current) => current ? {
+            onRunStateChange((current) => current.liveRun ? {
               ...current,
-              calls: current.calls.map((call) => call.index === progress.index ? { ...call, status: "running" } : call),
+              liveRun: {
+                ...current.liveRun,
+                calls: current.liveRun.calls.map((call) => call.index === progress.index ? { ...call, status: "running" } : call),
+              },
             } : current);
             break;
           case "callFinished":
-            setLiveRun((current) => current ? {
+            onRunStateChange((current) => current.liveRun ? {
               ...current,
-              summary: progress.summary,
-              calls: current.calls.map((call) => call.index === progress.call.index
-                ? { ...call, status: progress.call.status, result: progress.call }
-                : call),
+              liveRun: {
+                ...current.liveRun,
+                summary: progress.summary,
+                calls: current.liveRun.calls.map((call) => call.index === progress.call.index
+                  ? { ...call, status: progress.call.status, result: progress.call }
+                  : call),
+              },
             } : current);
             break;
           case "connectionFailed":
-            setLiveRun((current) => current ? { ...current, connectionError: progress.error } : current);
+            onRunStateChange((current) => current.liveRun ? {
+              ...current,
+              liveRun: { ...current.liveRun, connectionError: progress.error },
+            } : current);
             break;
         }
       };
@@ -2181,16 +2380,20 @@ function AutomationPanel({
         request: { profile, content, context: { inputs: {} } },
         onProgress,
       });
-      setRun(response);
-      setLiveRun(null);
+      onRunStateChange((current) => ({
+        ...current,
+        isRunning: false,
+        run: response,
+        liveRun: null,
+        reportPath: `${response.result.name.replace(/[^a-z0-9]+/gi, "-").toLowerCase() || "mcp-check"}.html`,
+      }));
       onCountChange(response.result.summary.total);
-      setReportPath(`${response.result.name.replace(/[^a-z0-9]+/gi, "-").toLowerCase() || "mcp-check"}.html`);
       setValidation(`Valid test set / ${response.result.summary.total} calls`);
       onRunComplete();
     } catch (runError) {
       setError(String(runError));
     } finally {
-      setIsRunning(false);
+      onRunStateChange((current) => ({ ...current, isRunning: false }));
     }
   }
 
@@ -2198,13 +2401,14 @@ function AutomationPanel({
     if (!run) return;
     setError(null);
     try {
-      setSavedReports(await invoke<SaveReportResponse>("save_report_bundle", {
+      const reports = await invoke<SaveReportResponse>("save_report_bundle", {
         request: {
           htmlPath: reportPath,
           html: run.reportHtml,
           yaml: run.reportYaml,
         },
-      }));
+      });
+      onRunStateChange((current) => ({ ...current, savedReports: reports }));
     } catch (saveError) {
       setError(String(saveError));
     }
@@ -2269,7 +2473,11 @@ function AutomationPanel({
           </div>
           {run && (
             <div className="report-save-controls">
-              <input aria-label="Report HTML path" value={reportPath} onChange={(event) => setReportPath(event.currentTarget.value)} />
+              <input
+                aria-label="Report HTML path"
+                value={reportPath}
+                onChange={(event) => onRunStateChange((current) => ({ ...current, reportPath: event.currentTarget.value }))}
+              />
               <button className="secondary-button" type="button" onClick={saveReports} disabled={!reportPath.trim()}>
                 <Download size={15} /> Save HTML + YAML
               </button>
@@ -2407,12 +2615,25 @@ function AutomationPanel({
 function KeyValueEditor({
   label,
   entries,
+  secretIdPrefix,
+  secrets,
   onChange,
 }: {
   label: string;
   entries: KeyValueEntry[];
+  secretIdPrefix: string;
+  secrets: SecretSummary[];
   onChange: (entries: KeyValueEntry[]) => void;
 }) {
+  const secretListId = `secret-ids-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+  const suggestedSecretId = (key: string, index: number) => {
+    const value = `${secretIdPrefix}-${key}`
+      .toLowerCase()
+      .replace(/[^a-z0-9._:-]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+    return value || `secret-${index + 1}`;
+  };
+
   return (
     <fieldset className="key-value-editor">
       <legend>{label}</legend>
@@ -2427,13 +2648,43 @@ function KeyValueEditor({
           <input
             aria-label={`${label} value ${index + 1}`}
             placeholder="Value"
+            type={entry.secret ? "password" : "text"}
             value={entry.value}
             onChange={(event) => onChange(entries.map((candidate, current) => current === index ? { ...candidate, value: event.currentTarget.value } : candidate))}
           />
+          <label className="secret-toggle" title={entry.secret ? "Use a managed secret reference" : "Store this value in the OS keychain"}>
+            <input
+              type="checkbox"
+              checked={entry.secret}
+              aria-label={`Mark ${label} ${index + 1} as secret`}
+              onChange={(event) => onChange(entries.map((candidate, current) => current === index ? {
+                ...candidate,
+                secret: event.currentTarget.checked,
+                secretId: event.currentTarget.checked
+                  ? candidate.secretId || suggestedSecretId(candidate.key, index)
+                  : candidate.secretId,
+              } : candidate))}
+            />
+            <KeyRound size={12} />
+            <span>Secret</span>
+          </label>
           <button className="icon-button" type="button" aria-label={`Remove ${label} ${index + 1}`} onClick={() => onChange(entries.filter((_, current) => current !== index))}><Trash2 size={14} /></button>
+          {entry.secret && (
+            <input
+              className="secret-id-input"
+              aria-label={`${label} secret ID ${index + 1}`}
+              list={secretListId}
+              placeholder="Secret ID"
+              value={entry.secretId}
+              onChange={(event) => onChange(entries.map((candidate, current) => current === index ? { ...candidate, secretId: event.currentTarget.value } : candidate))}
+            />
+          )}
         </div>
       ))}
-      <button className="text-button" type="button" onClick={() => onChange([...entries, { key: "", value: "" }])}><Plus size={14} /> Add {label.toLowerCase()}</button>
+      <button className="text-button" type="button" onClick={() => onChange([...entries, { key: "", value: "", secret: false, secretId: "" }])}><Plus size={14} /> Add {label.toLowerCase()}</button>
+      <datalist id={secretListId}>
+        {secrets.map((secret) => <option key={secret.id} value={secret.id}>{secret.label}</option>)}
+      </datalist>
     </fieldset>
   );
 }
@@ -2441,17 +2692,20 @@ function KeyValueEditor({
 function ServerDialog({
   state,
   protocolVersions,
+  secrets,
   onChange,
   onSave,
   onClose,
 }: {
   state: ServerEditorState;
   protocolVersions: string[];
+  secrets: SecretSummary[];
   onChange: (state: ServerEditorState) => void;
-  onSave: (draft: ServerDraft, originalName: string | null) => void;
+  onSave: (draft: ServerDraft, originalName: string | null) => Promise<void>;
   onClose: () => void;
 }) {
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const { draft } = state;
   const update = (patch: Partial<ServerDraft>) => onChange({ ...state, draft: { ...draft, ...patch } });
   const remote = draft.transportType !== "stdio";
@@ -2465,11 +2719,11 @@ function ServerDialog({
         aria-labelledby="server-dialog-title"
         onSubmit={(event) => {
           event.preventDefault();
-          try {
-            onSave(draft, state.originalName);
-          } catch (saveError) {
-            setError(String(saveError));
-          }
+          setSaving(true);
+          setError(null);
+          void onSave(draft, state.originalName)
+            .catch((saveError) => setError(String(saveError)))
+            .finally(() => setSaving(false));
         }}
       >
         <header className="dialog-header">
@@ -2482,14 +2736,14 @@ function ServerDialog({
 
         <div className="server-form">
           <label><span>Name</span><input autoFocus value={draft.name} onChange={(event) => update({ name: event.currentTarget.value })} /></label>
-          <label><span>Transport</span><select value={draft.transportType} onChange={(event) => update({ transportType: event.currentTarget.value as TransportConfig["type"] })}><option value="stdio">Standard I/O</option><option value="http">Streamable HTTP</option><option value="sse">HTTP + SSE</option><option value="websocket">WebSocket</option></select></label>
+          <label><span>Transport</span><select value={draft.transportType} onChange={(event) => update({ transportType: event.currentTarget.value as TransportConfig["type"] })}><option value="stdio">Standard I/O</option><option value="http">Streamable HTTP</option><option value="sse">HTTP + SSE</option><option value="auto">Auto-detect</option><option value="websocket">WebSocket</option></select></label>
           <label><span>Protocol</span><select value={draft.protocol} onChange={(event) => update({ protocol: event.currentTarget.value })}><option value="auto">Auto negotiate</option>{protocolVersions.map((version) => <option key={version} value={`exact:${version}`}>{version}</option>)}</select></label>
           <label><span>Timeout (ms)</span><input type="number" min="1" value={draft.timeout} onChange={(event) => update({ timeout: event.currentTarget.value })} placeholder="Default" /></label>
 
           {remote ? (
             <>
               <label className="server-form-wide"><span>URL</span><input type="url" value={draft.url} onChange={(event) => update({ url: event.currentTarget.value })} placeholder="https://example.com/mcp" /></label>
-              <div className="server-form-wide"><KeyValueEditor label="Headers" entries={draft.headers} onChange={(headers) => update({ headers })} /></div>
+              <div className="server-form-wide"><KeyValueEditor label="Headers" entries={draft.headers} secretIdPrefix={draft.name} secrets={secrets} onChange={(headers) => update({ headers })} /></div>
               {draft.transportType !== "websocket" && (
                 <fieldset className="oauth-fields server-form-wide">
                   <legend>OAuth (optional)</legend>
@@ -2507,7 +2761,7 @@ function ServerDialog({
               <label className="server-form-wide"><span>Arguments (one per line)</span><textarea value={draft.args} onChange={(event) => update({ args: event.currentTarget.value })} /></label>
               <label><span>Working directory</span><input value={draft.cwd} onChange={(event) => update({ cwd: event.currentTarget.value })} /></label>
               <label><span>Environment file</span><input value={draft.envFile} onChange={(event) => update({ envFile: event.currentTarget.value })} /></label>
-              <div className="server-form-wide"><KeyValueEditor label="Environment" entries={draft.env} onChange={(env) => update({ env })} /></div>
+              <div className="server-form-wide"><KeyValueEditor label="Environment" entries={draft.env} secretIdPrefix={draft.name} secrets={secrets} onChange={(env) => update({ env })} /></div>
             </>
           )}
         </div>
@@ -2515,52 +2769,182 @@ function ServerDialog({
         {error && <div className="import-message import-error"><AlertTriangle size={15} /><span>{error}</span></div>}
         <footer className="dialog-footer">
           <button className="text-button" type="button" onClick={onClose}>Cancel</button>
-          <button className="primary-button" type="submit"><Save size={15} /> Save server</button>
+          <button className="primary-button" type="submit" disabled={saving}>{saving ? <LoaderCircle className="spin" size={15} /> : <Save size={15} />} {saving ? "Saving" : "Save server"}</button>
         </footer>
       </form>
     </div>
   );
 }
 
-type TrustDialogProps = {
-  profile: ServerProfile;
-  onApprove: () => void;
-  onClose: () => void;
+type SecretEditorState = {
+  id: string;
+  label: string;
+  value: string;
+  existing: boolean;
 };
 
-function TrustDialog({ profile, onApprove, onClose }: TrustDialogProps) {
-  const isLocal = profile.transport.type === "stdio";
+function SecretsDialog({
+  secrets,
+  error,
+  onChanged,
+  onClose,
+}: {
+  secrets: SecretSummary[];
+  error: string | null;
+  onChanged: () => Promise<void>;
+  onClose: () => void;
+}) {
+  const [editor, setEditor] = useState<SecretEditorState | null>(null);
+  const [revealed, setRevealed] = useState<Record<string, string>>({});
+  const [formError, setFormError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  function addSecret() {
+    setFormError(null);
+    setEditor({ id: "", label: "", value: "", existing: false });
+  }
+
+  function editSecret(secret: SecretSummary) {
+    setFormError(null);
+    setEditor({ id: secret.id, label: secret.label, value: "", existing: true });
+  }
+
+  async function saveSecret() {
+    if (!editor || !isTauriRuntime()) {
+      setFormError("Secret storage requires the MCP Check desktop runtime.");
+      return;
+    }
+    const id = editor.id.trim();
+    if (!id) {
+      setFormError("Secret ID is required.");
+      return;
+    }
+
+    setBusy(true);
+    setFormError(null);
+    try {
+      const value = editor.value || (editor.existing
+        ? await invoke<string>("get_secret", { id })
+        : "");
+      if (!value) throw new Error("Secret value is required.");
+      await invoke<SecretSummary>("set_secret", {
+        request: { id, label: editor.label, value },
+      });
+      await onChanged();
+      setRevealed((current) => {
+        const next = { ...current };
+        delete next[id];
+        return next;
+      });
+      setEditor(null);
+    } catch (saveError) {
+      setFormError(String(saveError));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteSecret(secret: SecretSummary) {
+    if (!window.confirm(`Delete the managed secret '${secret.label}'?`)) return;
+    setBusy(true);
+    setFormError(null);
+    try {
+      await invoke("delete_secret", { id: secret.id });
+      setRevealed((current) => {
+        const next = { ...current };
+        delete next[secret.id];
+        return next;
+      });
+      await onChanged();
+      if (editor?.id === secret.id) setEditor(null);
+    } catch (deleteError) {
+      setFormError(String(deleteError));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function toggleReveal(secret: SecretSummary) {
+    if (revealed[secret.id] !== undefined) {
+      setRevealed((current) => {
+        const next = { ...current };
+        delete next[secret.id];
+        return next;
+      });
+      return;
+    }
+    try {
+      const value = await invoke<string>("get_secret", { id: secret.id });
+      setRevealed((current) => ({ ...current, [secret.id]: value }));
+      setFormError(null);
+    } catch (revealError) {
+      setFormError(String(revealError));
+    }
+  }
+
   return (
     <div className="dialog-backdrop" role="presentation">
       <section
-        className="resolution-dialog"
+        className="secrets-dialog"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="trust-title"
+        aria-labelledby="secrets-dialog-title"
       >
-        <header className="dialog-header">
+        <header className="dialog-header secrets-dialog-header">
           <div>
-            <span className="eyebrow">Trust required</span>
-            <h2 id="trust-title">{isLocal ? "Start local server" : "Connect to server"}</h2>
+            <span className="eyebrow">Local credentials</span>
+            <h2 id="secrets-dialog-title">Managed secrets</h2>
           </div>
-          <button className="icon-button" type="button" onClick={onClose} aria-label="Close">
-            <X size={18} />
-          </button>
+          <div className="secret-dialog-actions">
+            <button className="secondary-button" type="button" onClick={addSecret} disabled={busy}>
+              <Plus size={15} /> Add secret
+            </button>
+            <button className="icon-button" type="button" onClick={onClose} aria-label="Close">
+              <X size={18} />
+            </button>
+          </div>
         </header>
-        <div className="trust-content">
-          <p>
-            {isLocal
-              ? "MCP Check will start this command on your computer."
-              : "MCP Check will send protocol requests to this endpoint."}
-          </p>
-          <code>{endpointLabel(profile.transport)}</code>
+
+        <div className="secret-list" aria-label="Managed secrets">
+          {secrets.map((secret) => (
+            <div className="secret-row" key={secret.id}>
+              <KeyRound size={16} aria-hidden="true" />
+              <div className="secret-row-copy">
+                <strong>{secret.label}</strong>
+                <small><code>{secret.id}</code> / {secret.available ? "OS keychain" : "Unavailable"}</small>
+              </div>
+              <code className={`secret-value ${secret.available ? "" : "secret-value-unavailable"}`}>
+                {revealed[secret.id] ?? "********"}
+              </code>
+              <div className="secret-row-actions">
+                <button className="icon-button" type="button" disabled={!secret.available || busy} onClick={() => void toggleReveal(secret)} aria-label={`${revealed[secret.id] !== undefined ? "Hide" : "Reveal"} ${secret.label}`} title={revealed[secret.id] !== undefined ? "Hide secret" : "Reveal secret"}>
+                  {revealed[secret.id] !== undefined ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+                <button className="icon-button" type="button" disabled={busy} onClick={() => editSecret(secret)} aria-label={`Edit ${secret.label}`} title="Edit secret"><Pencil size={14} /></button>
+                <button className="icon-button" type="button" disabled={busy} onClick={() => void deleteSecret(secret)} aria-label={`Delete ${secret.label}`} title="Delete secret"><Trash2 size={14} /></button>
+              </div>
+            </div>
+          ))}
+          {secrets.length === 0 && <div className="secret-list-empty"><KeyRound size={22} /><span>No managed secrets</span><small>Add one here or mark a server header/environment value as secret.</small></div>}
         </div>
-        <footer className="dialog-footer">
-          <button className="text-button" type="button" onClick={onClose}>Cancel</button>
-          <button className="primary-button" type="button" onClick={onApprove}>
-            {isLocal ? "Start" : "Connect"} <PlugZap size={16} />
-          </button>
-        </footer>
+
+        {(error || formError) && <div className="secret-dialog-message" role="alert"><AlertTriangle size={15} /><span>{formError ?? error}</span></div>}
+
+        {editor && (
+          <form className="secret-form" onSubmit={(event) => { event.preventDefault(); void saveSecret(); }}>
+            <div className="secret-form-heading">
+              <span className="eyebrow">{editor.existing ? "Update credential" : "New credential"}</span>
+              <strong>{editor.existing ? editor.id : "Add a keychain entry"}</strong>
+            </div>
+            <label><span>Secret ID</span><input autoFocus={!editor.existing} value={editor.id} disabled={editor.existing} onChange={(event) => setEditor({ ...editor, id: event.currentTarget.value })} placeholder="github-token" /></label>
+            <label><span>Label</span><input value={editor.label} onChange={(event) => setEditor({ ...editor, label: event.currentTarget.value })} placeholder="GitHub token" /></label>
+            <label><span>{editor.existing ? "Replacement value" : "Value"}</span><input type="password" autoComplete="new-password" value={editor.value} onChange={(event) => setEditor({ ...editor, value: event.currentTarget.value })} placeholder={editor.existing ? "Leave blank to keep current value" : "Enter secret value"} /></label>
+            <footer className="dialog-footer">
+              <button className="text-button" type="button" onClick={() => setEditor(null)} disabled={busy}>Cancel</button>
+              <button className="primary-button" type="submit" disabled={busy}>{busy ? <LoaderCircle className="spin" size={15} /> : <Save size={15} />} {busy ? "Saving" : "Save secret"}</button>
+            </footer>
+          </form>
+        )}
       </section>
     </div>
   );
@@ -2569,20 +2953,25 @@ function TrustDialog({ profile, onApprove, onClose }: TrustDialogProps) {
 type ResolutionDialogProps = {
   serverName: string;
   inputs: ConfigInputDefinition[];
-  onConnect: (values: Record<string, string>) => void;
+  storedSecretIds: string[];
+  onConnect: (values: Record<string, string>) => Promise<void>;
   onClose: () => void;
 };
 
 function ResolutionDialog({
   serverName,
   inputs,
+  storedSecretIds,
   onConnect,
   onClose,
 }: ResolutionDialogProps) {
   const [values, setValues] = useState<Record<string, string>>(() =>
     Object.fromEntries(inputs.map((input) => [input.id, input.defaultValue ?? ""])),
   );
-  const complete = inputs.every((input) => values[input.id]?.length > 0);
+  const [error, setError] = useState<string | null>(null);
+  const [connecting, setConnecting] = useState(false);
+  const stored = new Set(storedSecretIds);
+  const complete = inputs.every((input) => values[input.id]?.length > 0 || (input.secret && stored.has(input.id)));
 
   return (
     <div className="dialog-backdrop" role="presentation">
@@ -2593,7 +2982,12 @@ function ResolutionDialog({
         aria-labelledby="resolution-title"
         onSubmit={(event) => {
           event.preventDefault();
-          if (complete) onConnect(values);
+          if (!complete || connecting) return;
+          setConnecting(true);
+          setError(null);
+          void onConnect(values)
+            .catch((connectError) => setError(String(connectError)))
+            .finally(() => setConnecting(false));
         }}
       >
         <header className="dialog-header">
@@ -2643,18 +3037,22 @@ function ResolutionDialog({
               {input.kind === "command" && (
                 <small>Command inputs are never executed; provide the resulting value.</small>
               )}
+              {input.secret && stored.has(input.id) && (
+                <small>Stored in the OS keychain. Enter a new value to replace it.</small>
+              )}
             </label>
           ))}
         </div>
+        {error && <div className="import-message import-error"><AlertTriangle size={15} /><span>{error}</span></div>}
         <footer className="dialog-footer">
-          <button className="text-button" type="button" onClick={onClose}>Cancel</button>
+          <button className="text-button" type="button" onClick={onClose} disabled={connecting}>Cancel</button>
           <button
             className="primary-button"
             type="submit"
-            disabled={!complete}
+            disabled={!complete || connecting}
             aria-label="Connect"
           >
-            Connect <PlugZap size={16} />
+            {connecting ? <LoaderCircle className="spin" size={16} /> : <PlugZap size={16} />} {connecting ? "Connecting" : "Connect"}
           </button>
         </footer>
       </form>

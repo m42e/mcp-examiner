@@ -4,7 +4,7 @@ use std::{
     time::Instant,
 };
 
-use futures::stream::BoxStream;
+use futures::{StreamExt, stream::BoxStream};
 use http::{HeaderName, HeaderValue};
 use rmcp::{
     model::ClientJsonRpcMessage,
@@ -28,6 +28,7 @@ pub struct HttpObservation {
     pub request_headers: BTreeMap<String, String>,
     pub request_body: Option<Value>,
     pub response_kind: Option<String>,
+    pub response_body: Option<Value>,
     pub session_id: Option<String>,
     pub error: Option<String>,
 }
@@ -93,6 +94,7 @@ impl TransportRecorder {
             request_headers: headers,
             request_body: body.map(|body| state.redactor.redact_json(&body)),
             response_kind: None,
+            response_body: None,
             session_id: None,
             error: None,
         };
@@ -104,17 +106,54 @@ impl TransportRecorder {
         &self,
         index: usize,
         response_kind: Option<&str>,
+        response_body: Option<Value>,
         session_id: Option<&str>,
         error: Option<&str>,
     ) {
         let mut state = self.state.lock().expect("transport recorder poisoned");
         let redactor = state.redactor.clone();
+        let response_body = response_body.map(|body| redactor.redact_json(&body));
         if let Some(observation) = state.observations.get_mut(index) {
             observation.response_kind = response_kind.map(str::to_owned);
+            observation.response_body = response_body;
             observation.session_id = session_id.map(|value| redactor.redact_text(value));
             observation.error = error.map(|value| redactor.redact_text(value));
         }
     }
+
+    fn record_sse_event(&self, index: usize, event: &Sse) {
+        let event = serde_json::json!({
+            "event": event.event,
+            "data": event.data,
+            "id": event.id,
+            "retry": event.retry,
+        });
+        let mut state = self.state.lock().expect("transport recorder poisoned");
+        let event = state.redactor.redact_json(&event);
+        if let Some(observation) = state.observations.get_mut(index) {
+            match observation.response_body.as_mut() {
+                Some(Value::Array(events)) => events.push(event),
+                Some(response) => {
+                    let previous = std::mem::take(response);
+                    *response = Value::Array(vec![previous, event]);
+                }
+                None => observation.response_body = Some(Value::Array(vec![event])),
+            }
+        }
+    }
+}
+
+fn observe_sse_stream(
+    stream: BoxStream<'static, Result<Sse, SseError>>,
+    recorder: TransportRecorder,
+    index: usize,
+) -> BoxStream<'static, Result<Sse, SseError>> {
+    Box::pin(stream.map(move |result| {
+        if let Ok(event) = &result {
+            recorder.record_sse_event(index, event);
+        }
+        result
+    }))
 }
 
 #[derive(Clone)]
@@ -181,24 +220,37 @@ impl StreamableHttpClient for ObservableHttpClient {
                 max_sse_event_size,
             )
             .await;
-        match &result {
+        match result {
             Ok(StreamableHttpPostResponse::Accepted) => {
-                self.recorder.finish(index, Some("accepted"), None, None)
-            }
-            Ok(StreamableHttpPostResponse::Json(_, session)) => {
                 self.recorder
-                    .finish(index, Some("json"), session.as_deref(), None)
+                    .finish(index, Some("accepted"), None, None, None);
+                Ok(StreamableHttpPostResponse::Accepted)
             }
-            Ok(StreamableHttpPostResponse::Sse(_, session)) => {
+            Ok(StreamableHttpPostResponse::Json(message, session)) => {
+                let response_body = serde_json::to_value(&message).ok();
                 self.recorder
-                    .finish(index, Some("sse"), session.as_deref(), None)
+                    .finish(index, Some("json"), response_body, session.as_deref(), None);
+                Ok(StreamableHttpPostResponse::Json(message, session))
             }
-            Ok(_) => self.recorder.finish(index, Some("unknown"), None, None),
-            Err(error) => self
-                .recorder
-                .finish(index, None, None, Some(&error.to_string())),
+            Ok(StreamableHttpPostResponse::Sse(stream, session)) => {
+                self.recorder
+                    .finish(index, Some("sse"), None, session.as_deref(), None);
+                Ok(StreamableHttpPostResponse::Sse(
+                    observe_sse_stream(stream, self.recorder.clone(), index),
+                    session,
+                ))
+            }
+            Ok(response) => {
+                self.recorder
+                    .finish(index, Some("unknown"), None, None, None);
+                Ok(response)
+            }
+            Err(error) => {
+                self.recorder
+                    .finish(index, None, None, None, Some(&error.to_string()));
+                Err(error)
+            }
         }
-        result
     }
 
     async fn delete_session(
@@ -219,13 +271,18 @@ impl StreamableHttpClient for ObservableHttpClient {
             custom_headers,
         )
         .await;
-        match &result {
-            Ok(()) => self.recorder.finish(index, Some("empty"), None, None),
-            Err(error) => self
-                .recorder
-                .finish(index, None, None, Some(&error.to_string())),
+        match result {
+            Ok(()) => {
+                self.recorder
+                    .finish(index, Some("empty"), None, None, None);
+                Ok(())
+            }
+            Err(error) => {
+                self.recorder
+                    .finish(index, None, None, None, Some(&error.to_string()));
+                Err(error)
+            }
         }
-        result
     }
 
     async fn get_stream(
@@ -248,13 +305,18 @@ impl StreamableHttpClient for ObservableHttpClient {
             custom_headers,
         )
         .await;
-        match &result {
-            Ok(_) => self.recorder.finish(index, Some("sse"), None, None),
-            Err(error) => self
-                .recorder
-                .finish(index, None, None, Some(&error.to_string())),
+        match result {
+            Ok(stream) => {
+                self.recorder
+                    .finish(index, Some("sse"), None, None, None);
+                Ok(observe_sse_stream(stream, self.recorder.clone(), index))
+            }
+            Err(error) => {
+                self.recorder
+                    .finish(index, None, None, None, Some(&error.to_string()));
+                Err(error)
+            }
         }
-        result
     }
 
     async fn get_stream_with_max_sse_event_size(
@@ -279,12 +341,17 @@ impl StreamableHttpClient for ObservableHttpClient {
             max_sse_event_size,
         )
         .await;
-        match &result {
-            Ok(_) => self.recorder.finish(index, Some("sse"), None, None),
-            Err(error) => self
-                .recorder
-                .finish(index, None, None, Some(&error.to_string())),
+        match result {
+            Ok(stream) => {
+                self.recorder
+                    .finish(index, Some("sse"), None, None, None);
+                Ok(observe_sse_stream(stream, self.recorder.clone(), index))
+            }
+            Err(error) => {
+                self.recorder
+                    .finish(index, None, None, None, Some(&error.to_string()));
+                Err(error)
+            }
         }
-        result
     }
 }

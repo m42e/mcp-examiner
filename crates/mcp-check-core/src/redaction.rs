@@ -21,6 +21,13 @@ impl Redactor {
                 .filter(|value| !value.is_empty())
                 .cloned(),
         );
+        secrets.extend(
+            context
+                .secrets
+                .values()
+                .filter(|value| !value.is_empty())
+                .cloned(),
+        );
         collect_profile_secrets(profile, &mut secrets);
         Self::from_secrets(secrets)
     }
@@ -139,8 +146,15 @@ impl Redactor {
                 url: self.redact_text(url),
                 headers: self.redact_headers(headers),
                 oauth: oauth.as_ref().map(|oauth| self.redact_oauth(oauth)),
-            },
-            TransportConfig::Websocket { url, headers } => TransportConfig::Websocket {
+            },            TransportConfig::Auto {
+                url,
+                headers,
+                oauth,
+             } => TransportConfig::Auto {
+                url: self.redact_text(url),
+                headers: self.redact_headers(headers),
+                oauth: oauth.as_ref().map(|oauth| self.redact_oauth(oauth)),
+             },            TransportConfig::Websocket { url, headers } => TransportConfig::Websocket {
                 url: self.redact_text(url),
                 headers: self.redact_headers(headers),
             },
@@ -207,8 +221,7 @@ fn collect_sensitive_json_values(value: &Value, secrets: &mut BTreeSet<String>) 
 fn collect_profile_secrets(profile: &ServerProfile, secrets: &mut BTreeSet<String>) {
     match &profile.transport {
         TransportConfig::Http { url, headers, .. }
-        | TransportConfig::Sse { url, headers, .. }
-        | TransportConfig::Websocket { url, headers } => {
+        | TransportConfig::Sse { url, headers, .. }         | TransportConfig::Auto { url, headers, .. }        | TransportConfig::Websocket { url, headers } => {
             collect_url_credentials(url, secrets);
             for (name, value) in headers {
                 if is_sensitive_name(name) && !value.is_empty() {
@@ -274,6 +287,7 @@ mod tests {
     #[test]
     fn removes_connection_secrets_from_every_supported_shape() {
         let sentinel = "sentinel-secret-93e78";
+        let managed_sentinel = "managed-secret-42f19";
         let profile = ServerProfile {
             format_version: FORMAT_VERSION,
             name: "redaction".to_owned(),
@@ -298,10 +312,12 @@ mod tests {
             workspace_folder: None,
             environment: BTreeMap::new(),
             inputs: BTreeMap::from([("credential".to_owned(), sentinel.to_owned())]),
+            secrets: BTreeMap::from([("api-token".to_owned(), managed_sentinel.to_owned())]),
         };
         let redactor = Redactor::for_connection(&profile, &context);
         let data = serde_json::json!({
             "authorization": format!("Bearer {sentinel}"),
+            "managed": managed_sentinel,
             "nested": [{ "message": format!("request failed for {sentinel}") }],
         });
 

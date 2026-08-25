@@ -239,7 +239,8 @@ impl SessionManager {
                 .await?;
                 (session, None)
             }
-            TransportConfig::Http { url, headers, .. } => {
+            TransportConfig::Http { url, headers, .. }
+              | TransportConfig::Auto { url, headers, .. } => {
                 let recorder = TransportRecorder::new(redactor.clone());
                 let config = StreamableHttpClientTransportConfig::with_uri(url.clone())
                     .custom_headers(parse_headers(headers)?);
@@ -714,9 +715,10 @@ fn parse_headers(
 
 fn transport_name(transport: &TransportConfig) -> &'static str {
     match transport {
-        TransportConfig::Stdio { .. } => "stdio",
+         TransportConfig::Stdio { .. } => "stdio",
         TransportConfig::Http { .. } => "http",
         TransportConfig::Sse { .. } => "sse",
+        TransportConfig::Auto { .. } => "auto",
         TransportConfig::Websocket { .. } => "websocket",
     }
 }
@@ -912,6 +914,11 @@ mod tests {
         let observations = manager.http_observations("http-fixture").await;
         assert!(observations.iter().any(|event| event.method == "POST"));
         assert!(observations.iter().any(|event| event.method == "DELETE"));
+        assert!(observations.iter().any(|event| {
+            event.response_body.as_ref().is_some_and(|body| {
+                body["result"]["content"][0]["text"] == "over http"
+            })
+        }));
         let serialized = serde_json::to_string(&observations).unwrap();
         assert!(!serialized.contains("http-secret-4d2a"));
         assert!(serialized.contains(REDACTED));

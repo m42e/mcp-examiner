@@ -6,7 +6,9 @@ use mcp_check_core::{
 };
 use serde::Deserialize;
 use serde_json::Value;
-use tauri::{State, ipc::Channel};
+use tauri::{AppHandle, State, ipc::Channel};
+
+mod secrets;
 
 #[cfg(debug_assertions)]
 use std::{
@@ -110,6 +112,29 @@ fn write_document(request: WriteDocumentRequest) -> Result<String, String> {
 }
 
 #[tauri::command]
+fn list_secrets(app: AppHandle) -> Result<Vec<secrets::SecretSummary>, String> {
+    secrets::list(&app)
+}
+
+#[tauri::command]
+fn set_secret(
+    app: AppHandle,
+    request: secrets::SetSecretRequest,
+) -> Result<secrets::SecretSummary, String> {
+    secrets::set(&app, request)
+}
+
+#[tauri::command]
+fn get_secret(id: String) -> Result<String, String> {
+    secrets::get(&id)
+}
+
+#[tauri::command]
+fn delete_secret(app: AppHandle, id: String) -> Result<(), String> {
+    secrets::delete(&app, &id)
+}
+
+#[tauri::command]
 fn import_config_preview(content: &str, source: ConfigSourceKind) -> Result<ImportResult, String> {
     import_config(content, source, None).map_err(|error| error.to_string())
 }
@@ -136,6 +161,7 @@ async fn run_automated_test(
         context.environment.extend(request_context.environment);
         context.inputs = request_context.inputs;
     }
+    secrets::hydrate_context(&request.profile, &mut context);
     let result = run_test_set_with_progress(
         &sessions,
         &request.profile,
@@ -200,6 +226,7 @@ async fn connect_server(
         resolved_context.environment.extend(context.environment);
         resolved_context.inputs = context.inputs;
     }
+    secrets::hydrate_context(&profile, &mut resolved_context);
     let redactor = Redactor::for_connection(&profile, &resolved_context);
     let result = sessions
         .connect_with_context(&profile, &resolved_context)
@@ -297,6 +324,10 @@ pub fn run() {
             app_info,
             read_document,
             write_document,
+            list_secrets,
+            set_secret,
+            get_secret,
+            delete_secret,
             import_config_preview,
             validate_test_set,
             run_automated_test,

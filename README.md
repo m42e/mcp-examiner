@@ -9,9 +9,11 @@ A native workbench for inspecting and testing Model Context Protocol servers. MC
 - Read-only normalization of VS Code, Claude-compatible, and Inspector-style JSON configurations.
 - Native Open/Save support for MCP JSON configuration documents, with the active absolute path shown in the import editor.
 - Persistent server-rail Open/Save actions: Open imports a selected MCP JSON file directly, while Save serializes the current live server list rather than the original pasted source.
-- Structured Add/Edit Server dialog for stdio, Streamable HTTP, HTTP+SSE, and WebSocket profiles, including protocol, timeout, args/cwd/env, headers, and OAuth fields; edits revoke trust.
-- Resolution of `${workspaceFolder}`, `${input:id}`, `${env:VAR}`, `${VAR}`, and `${VAR:-default}` placeholders through an explicit connection context.
-- Typed VS Code prompt, pick, and command inputs with manual secret-safe value collection; command inputs are never executed implicitly.
+- Structured Add/Edit Server dialog for stdio, Streamable HTTP, HTTP+SSE, Auto-detect, and WebSocket profiles, including protocol, timeout, args/cwd/env, headers, and OAuth fields; edits revoke trust. Auto-detect connects over Streamable HTTP (which transparently handles both `application/json` and `text/event-stream` responses) with protocol-version fallback.
+- Resolution of `${workspaceFolder}`, `${input:id}`, `${secret:id}`, `${env:VAR}`, `${VAR}`, and `${VAR:-default}` placeholders through an explicit connection context.
+- OS keychain-backed managed secrets with a full desktop management dialog for adding, editing, masked viewing, revealing, and deleting credentials; only non-sensitive labels and IDs are kept in the app data index.
+- Secret toggles for server environment and header fields, which save values to the keychain and serialize `${secret:id}` references instead of plaintext.
+- Typed VS Code prompt, pick, and command inputs with manual secret-safe value collection; secret inputs are stored under their input IDs for reuse, and command inputs are never executed implicitly.
 - Relative `envFile` loading from the server working directory, with file values available to interpolation and explicit profile environment values taking precedence.
 - Support in the normalized model for stdio, Streamable HTTP, deprecated HTTP+SSE, and WebSocket profiles.
 - Diagnostics for host-specific settings that cannot be ported safely.

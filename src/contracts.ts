@@ -29,7 +29,7 @@ export type TransportConfig =
       envFile: string | null;
     }
   | {
-      type: "http" | "sse";
+      type: "http" | "sse" | "auto";
       url: string;
       headers: Record<string, string>;
       oauth: OAuthConfig | null;
@@ -68,6 +68,13 @@ export type ConfigInputDefinition = {
   secret: boolean;
   defaultValue: string | null;
   options: { label: string; value: string }[];
+};
+
+export type SecretSummary = {
+  id: string;
+  label: string;
+  updatedAtUnixMs: number;
+  available: boolean;
 };
 
 export type ImportResult = {
@@ -224,6 +231,7 @@ export type HttpObservation = {
   requestHeaders: Record<string, string>;
   requestBody: unknown | null;
   responseKind: string | null;
+  responseBody: unknown | null;
   sessionId: string | null;
   error: string | null;
 };

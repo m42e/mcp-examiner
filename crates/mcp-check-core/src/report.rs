@@ -84,6 +84,10 @@ pub fn render_html_report(result: &TestRunResult) -> String {
         .http_observations
         .iter()
         .map(|event| {
+            let body = serde_json::json!({
+                "request": event.request_body,
+                "response": event.response_body,
+            });
             format!(
                 "<tr><td>{}</td><td>{} ms</td><td>{}</td><td>{}</td><td>{}</td><td><code>{}</code></td></tr>",
                 event.sequence,
@@ -91,7 +95,7 @@ pub fn render_html_report(result: &TestRunResult) -> String {
                 escape_html(&event.method),
                 escape_html(&event.url),
                 escape_html(event.response_kind.as_deref().unwrap_or("error")),
-                escape_html(&serde_json::to_string(&event.request_body).unwrap_or_default())
+                escape_html(&serde_json::to_string(&body).unwrap_or_default())
             )
         })
         .collect::<String>();

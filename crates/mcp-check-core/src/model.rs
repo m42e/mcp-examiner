@@ -82,6 +82,13 @@ pub enum TransportConfig {
         headers: BTreeMap<String, String>,
         oauth: Option<OAuthConfig>,
     },
+    #[serde(rename = "auto")]
+    Auto {
+        url: String,
+        #[serde(default)]
+        headers: BTreeMap<String, String>,
+        oauth: Option<OAuthConfig>,
+    },
     Websocket {
         url: String,
         #[serde(default)]
