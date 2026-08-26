@@ -94,11 +94,43 @@ jobs:
       - name: Build application bundles
         run: npm run tauri build -- --target ${{ matrix.target }}
 
+      - name: Stage release packages
+        shell: bash
+        run: |
+          package_dir="release-packages"
+          mkdir -p "$package_dir"
+
+          case "${{ matrix.target }}" in
+            *-apple-darwin)
+              cp target/${{ matrix.target }}/release/bundle/dmg/*.dmg "$package_dir/"
+              ;;
+            *-unknown-linux-gnu)
+              cp target/${{ matrix.target }}/release/bundle/deb/*.deb "$package_dir/"
+              cp target/${{ matrix.target }}/release/bundle/rpm/*.rpm "$package_dir/"
+              cp target/${{ matrix.target }}/release/bundle/appimage/*.AppImage "$package_dir/"
+              ;;
+            *-windows-msvc)
+              cp target/${{ matrix.target }}/release/bundle/msi/*.msi "$package_dir/"
+              cp target/${{ matrix.target }}/release/bundle/nsis/*.exe "$package_dir/"
+              ;;
+            *)
+              echo "::error::Unsupported release target: ${{ matrix.target }}"
+              exit 1
+              ;;
+          esac
+
+          shopt -s nullglob
+          packages=("$package_dir"/*)
+          if (( ${#packages[@]} == 0 )); then
+            echo "::error::No release packages were staged"
+            exit 1
+          fi
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v7.0.1
         with:
           name: mcp-examiner-${{ matrix.target }}
-          path: target/${{ matrix.target }}/release/bundle
+          path: release-packages
           if-no-files-found: error
           retention-days: 14
 
