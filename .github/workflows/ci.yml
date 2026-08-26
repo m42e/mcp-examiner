@@ -12,8 +12,18 @@ permissions:
 
 jobs:
   verify:
-    name: Verify
-    runs-on: ubuntu-latest
+    name: Verify (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux
+            os: ubuntu-latest
+          - name: macOS
+            os: macos-latest
+          - name: Windows
+            os: windows-latest
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -31,6 +41,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Install Linux dependencies
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -48,8 +59,13 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Install Playwright browser
+      - name: Install Playwright browser on Linux
+        if: runner.os == 'Linux'
         run: npx playwright install --with-deps chromium
+
+      - name: Install Playwright browser
+        if: runner.os != 'Linux'
+        run: npx playwright install chromium
 
       - name: Run project checks
         run: npm run check

@@ -80,7 +80,7 @@ The Playwright checks exercise the workbench at desktop and narrow viewport size
 
 ## GitHub Actions
 
-Pull requests and pushes to `main` run the frontend, Rust, and Playwright checks through `npm run check`. The build workflow creates native Tauri bundles for Linux x86_64 and arm64, macOS Intel and Apple Silicon, and Windows x86_64. Build artifacts from pull requests and `main` are retained in GitHub Actions for 14 days.
+Pull requests and pushes to `main` run the frontend, Rust, and Playwright checks through `npm run check` on Linux, macOS, and Windows. The build workflow creates native Tauri bundles for Linux x86_64 and arm64, macOS Intel and Apple Silicon, and Windows x86_64. Build artifacts from pull requests and `main` are retained in GitHub Actions for 14 days.
 
 To publish a release, update the versions in `package.json`, `Cargo.toml`, and `src-tauri/tauri.conf.json`, then push a tag with the matching `v` prefix, for example `v0.1.0`. The tagged build creates a GitHub release and attaches the platform bundles automatically.
 
