@@ -2305,7 +2305,7 @@ dependencies = [
 
 [[package]]
 name = "mcp-examiner-app"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "keyring",
  "mcp-examiner-core",
@@ -2319,7 +2319,7 @@ dependencies = [
 
 [[package]]
 name = "mcp-examiner-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "clap",
  "mcp-examiner-core",
@@ -2329,7 +2329,7 @@ dependencies = [
 
 [[package]]
 name = "mcp-examiner-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "dotenvy",
  "futures",
