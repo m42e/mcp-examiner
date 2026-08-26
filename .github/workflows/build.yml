@@ -37,10 +37,10 @@ jobs:
             target: x86_64-pc-windows-msvc
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7.0.0
         with:
           node-version: 22
           cache: npm
@@ -72,6 +72,9 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Build frontend assets
+        run: npm run build
+
       - name: Verify release version
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
@@ -92,7 +95,7 @@ jobs:
         run: npm run tauri build
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: mcp-examiner-${{ matrix.target }}
           path: target/release/bundle
@@ -108,7 +111,7 @@ jobs:
       contents: write
     steps:
       - name: Download build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8.0.1
         with:
           pattern: mcp-examiner-*
           path: release-assets

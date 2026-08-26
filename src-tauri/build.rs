@@ -25,13 +25,14 @@ fn build_frontend() {
     let workspace = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .expect("Tauri crate must be inside the workspace");
-    let status = Command::new("npm")
+    let npm_command = if cfg!(windows) { "npm.cmd" } else { "npm" };
+    let status = Command::new(npm_command)
         .args(["run", "build"])
         .current_dir(workspace)
         .status()
-        .unwrap_or_else(|error| panic!("failed to run `npm run build`: {error}"));
+        .unwrap_or_else(|error| panic!("failed to run `{npm_command} run build`: {error}"));
 
     if !status.success() {
-        panic!("`npm run build` failed with status {status}");
+        panic!("`{npm_command} run build` failed with status {status}");
     }
 }
