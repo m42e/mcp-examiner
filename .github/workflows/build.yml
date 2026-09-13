@@ -151,9 +151,25 @@ jobs:
         if: runner.os == 'macOS' && env.MACOS_SIGNING_SECRETS_PRESENT == 'true'
         shell: bash
         run: |
-          app_path="$(find "target/${{ matrix.target }}/release/bundle/macos" -maxdepth 1 -name '*.app' -print -quit)"
+          set -euo pipefail
+
+          dmg_path="$(find "target/${{ matrix.target }}/release/bundle/dmg" -maxdepth 1 -name '*.dmg' -print -quit)"
+          if [[ -z "$dmg_path" ]]; then
+            echo "::error::No macOS DMG was produced"
+            exit 1
+          fi
+
+          mount_path="$(mktemp -d)"
+          cleanup() {
+            hdiutil detach "$mount_path" >/dev/null 2>&1 || true
+            rmdir "$mount_path"
+          }
+          trap cleanup EXIT
+
+          hdiutil attach "$dmg_path" -readonly -nobrowse -mountpoint "$mount_path" >/dev/null
+          app_path="$(find "$mount_path" -maxdepth 1 -name '*.app' -print -quit)"
           if [[ -z "$app_path" ]]; then
-            echo "::error::No macOS application bundle was produced"
+            echo "::error::No macOS application bundle was found in the DMG"
             exit 1
           fi
 
