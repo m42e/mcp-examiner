@@ -1,0 +1,142 @@
+name: Finalize macOS Notarization
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Optional tag to poll (for example v0.1.1)"
+        required: false
+        type: string
+
+permissions:
+  actions: write
+  contents: write
+
+concurrency:
+  group: finalize-notarization
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    name: Poll Apple notarization
+    runs-on: macos-14
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      SELECTED_TAG: ${{ inputs.tag || '' }}
+      MACOS_NOTARIZATION_SECRETS_PRESENT: ${{ secrets.APPLE_ID != '' && secrets.APPLE_APP_PASSWORD != '' && secrets.APPLE_TEAM_ID != '' }}
+    steps:
+      - name: Skip when notarization secrets are unavailable
+        if: env.MACOS_NOTARIZATION_SECRETS_PRESENT != 'true'
+        run: echo "Apple notarization secrets not configured; skipping finalization."
+
+      - name: Poll pending macOS notarization submissions
+        if: env.MACOS_NOTARIZATION_SECRETS_PRESENT == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          artifact_prefix="notarization-"
+          if [[ -n "$SELECTED_TAG" ]]; then
+            artifact_prefix="notarization-$SELECTED_TAG-"
+          fi
+
+          artifacts_file="$RUNNER_TEMP/notarization-artifacts.txt"
+          gh api "repos/$GH_REPO/actions/artifacts?per_page=100" --paginate \
+            --jq ".artifacts[] | select((.expired | not) and (.name | startswith(\"$artifact_prefix\"))) | @base64" \
+            > "$artifacts_file"
+
+          artifact_count="$(grep -c . "$artifacts_file" || true)"
+          if [[ "$artifact_count" -eq 0 ]]; then
+            echo "No pending macOS notarization artifacts found."
+            exit 0
+          fi
+
+          while IFS= read -r encoded_artifact; do
+            [[ -n "$encoded_artifact" ]] || continue
+
+            artifact_json="$(printf '%s' "$encoded_artifact" | base64 -D)"
+            artifact_id="$(jq -r '.id' <<<"$artifact_json")"
+            artifact_name="$(jq -r '.name' <<<"$artifact_json")"
+            run_id="$(jq -r '.workflow_run.id // empty' <<<"$artifact_json")"
+
+            if [[ -z "$run_id" ]]; then
+              echo "Artifact $artifact_name has no source workflow run; deleting it."
+              gh api -X DELETE "repos/$GH_REPO/actions/artifacts/$artifact_id"
+              continue
+            fi
+
+            workdir="$(mktemp -d)"
+            if ! gh run download "$run_id" -R "$GH_REPO" -n "$artifact_name" -D "$workdir"; then
+              echo "Unable to download $artifact_name; keeping it for a later poll."
+              rm -rf "$workdir"
+              continue
+            fi
+
+            metadata_file="$(find "$workdir" -name '*.json' -print -quit)"
+            if [[ -z "$metadata_file" ]]; then
+              echo "Artifact $artifact_name has no metadata; deleting it."
+              gh api -X DELETE "repos/$GH_REPO/actions/artifacts/$artifact_id"
+              rm -rf "$workdir"
+              continue
+            fi
+
+            tag="$(jq -r '.tag' "$metadata_file")"
+            target="$(jq -r '.target' "$metadata_file")"
+            asset_name="$(jq -r '.asset_name' "$metadata_file")"
+            submission_id="$(jq -r '.submission_id' "$metadata_file")"
+            response_file="$workdir/notary-info.json"
+
+            if ! xcrun notarytool info "$submission_id" \
+              --apple-id "$APPLE_ID" \
+              --password "$APPLE_APP_PASSWORD" \
+              --team-id "$APPLE_TEAM_ID" \
+              --output-format json > "$response_file"; then
+              echo "Unable to query Apple for $tag $target; keeping it for a later poll."
+              rm -rf "$workdir"
+              continue
+            fi
+
+            status="$(jq -r '.status // "Unknown"' "$response_file")"
+            echo "Apple status for $tag $target: $status"
+
+            case "$status" in
+              Accepted)
+                if ! gh release download "$tag" -R "$GH_REPO" --pattern "$asset_name" --dir "$workdir"; then
+                  echo "Release asset $asset_name was not found; keeping $artifact_name."
+                  rm -rf "$workdir"
+                  continue
+                fi
+
+                asset_path="$workdir/$asset_name"
+                if ! xcrun stapler staple "$asset_path" || ! xcrun stapler validate "$asset_path"; then
+                  echo "Stapling failed for $tag $target; keeping $artifact_name."
+                  rm -rf "$workdir"
+                  continue
+                fi
+
+                if ! gh release upload "$tag" -R "$GH_REPO" --clobber "$asset_path"; then
+                  echo "Release asset upload failed for $tag $target; keeping $artifact_name."
+                  rm -rf "$workdir"
+                  continue
+                fi
+
+                gh api -X DELETE "repos/$GH_REPO/actions/artifacts/$artifact_id"
+                echo "Stapled and replaced $asset_name for $tag."
+                ;;
+              "In Progress"|"Uploaded")
+                echo "Apple is still processing $tag $target; retaining $artifact_name."
+                ;;
+              *)
+                echo "Apple returned terminal status $status for $tag $target; deleting $artifact_name."
+                gh api -X DELETE "repos/$GH_REPO/actions/artifacts/$artifact_id"
+                ;;
+            esac
+
+            rm -rf "$workdir"
+          done < "$artifacts_file"

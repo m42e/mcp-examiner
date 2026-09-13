@@ -80,7 +80,35 @@ The Playwright checks exercise the workbench at desktop and narrow viewport size
 
 ## GitHub Actions
 
-Pull requests and pushes to `main` run the frontend, Rust, and Playwright checks through `npm run check` on Linux, macOS, and Windows. The build workflow creates native Tauri bundles for Linux x86_64 and arm64, macOS Apple Silicon, and Windows x86_64. Build artifacts from pull requests and `main` are retained in GitHub Actions for 14 days.
+Pull requests and pushes to `main` run the frontend, Rust, and Playwright checks through `npm run check` on Linux, macOS, and Windows. The release workflow builds native Tauri bundles for Linux x86_64 and arm64, macOS Apple Silicon, and Windows x86_64 for version tags or an explicitly selected tag.
 
 To publish a release, update the versions in `package.json`, `Cargo.toml`, and `src-tauri/tauri.conf.json`, then push a tag with the matching `v` prefix, for example `v0.1.0`. The tagged build creates a GitHub release and attaches the platform bundles automatically.
+
+The macOS release follows the same staged signing model as [`pw-env`](https://github.com/m42e/pw-env/). Create a `Developer ID Application` certificate, export it as a password-protected `.p12`, and configure these GitHub Actions secrets:
+
+- `APPLE_CERT_BASE64` (base64-encoded `.p12`; `openssl base64 -A -in certificate.p12 -out certificate-base64.txt`)
+- `APPLE_CERT_PASSWORD`
+- `APPLE_SIGNING_IDENTITY`
+
+Notarization is optional and requires all three of these secrets together:
+
+- `APPLE_ID`
+- `APPLE_APP_PASSWORD`
+- `APPLE_TEAM_ID`
+
+The helper below prepares the signing secrets and can upload them with the GitHub CLI. Omit the three notarization flags when signing only:
+
+```bash
+./scripts/setup-apple-signing-secrets.sh \
+	--cert ~/Certificates/developer-id-application.p12 \
+	--cert-password 'export-password' \
+	--identity 'Developer ID Application: Example Corp (TEAMID1234)' \
+	--apple-id 'developer@example.com' \
+	--app-password 'abcd-efgh-ijkl-mnop' \
+	--team-id 'TEAMID1234' \
+	--repo 'OWNER/REPOSITORY' \
+	--set-gh-secrets
+```
+
+When signing secrets are absent, the release remains publishable but its macOS DMG is unsigned. When signing secrets are present, the workflow imports the certificate into a temporary keychain, signs the Tauri application, and verifies it before publishing. When notarization secrets are also present, the DMG is submitted without waiting; the scheduled `finalize-notarization.yml` workflow polls Apple, staples accepted tickets, validates the DMG, and replaces the release asset in place. Existing unsigned downloads must be replaced by publishing a new release after configuring the secrets.
 

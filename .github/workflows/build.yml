@@ -1,16 +1,23 @@
-name: Build
+name: Release
 
 on:
   push:
-    branches:
-      - main
     tags:
       - "v*"
-  pull_request:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (for example v0.1.1)"
+        required: true
+        type: string
 
 permissions:
-  contents: read
+  contents: write
+
+env:
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+  MACOS_SIGNING_SECRETS_PRESENT: ${{ secrets.APPLE_CERT_BASE64 != '' && secrets.APPLE_CERT_PASSWORD != '' && secrets.APPLE_SIGNING_IDENTITY != '' }}
+  MACOS_NOTARIZATION_SECRETS_PRESENT: ${{ secrets.APPLE_ID != '' && secrets.APPLE_APP_PASSWORD != '' && secrets.APPLE_TEAM_ID != '' }}
 
 jobs:
   build:
@@ -35,6 +42,8 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ env.RELEASE_TAG }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v7.0.0
@@ -76,10 +85,14 @@ jobs:
         run: npm run build
 
       - name: Verify release version
-        if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
         run: |
-          tag_version="${GITHUB_REF_NAME#v}"
+          if [[ "$RELEASE_TAG" != v* ]]; then
+            echo "::error::Release tag must start with v: $RELEASE_TAG"
+            exit 1
+          fi
+
+          tag_version="${RELEASE_TAG#v}"
           package_version="$(node -p "JSON.parse(require('fs').readFileSync('package.json', 'utf8')).version")"
           cargo_version="$(sed -n 's/^version = \"\(.*\)\"/\1/p' Cargo.toml | head -1)"
           tauri_version="$(node -p "JSON.parse(require('fs').readFileSync('src-tauri/tauri.conf.json', 'utf8')).version")"
@@ -91,8 +104,108 @@ jobs:
             fi
           done
 
-      - name: Build application bundles
-        run: npm run tauri build -- --target ${{ matrix.target }}
+      - name: Prepare Apple signing keychain
+        if: runner.os == 'macOS'
+        env:
+          APPLE_CERT_BASE64: ${{ secrets.APPLE_CERT_BASE64 }}
+          APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.target }}
+        shell: bash
+        run: |
+          if [[ "$MACOS_SIGNING_SECRETS_PRESENT" != "true" ]]; then
+            echo "Apple signing secrets not configured; leaving macOS artifacts unsigned."
+            exit 0
+          fi
+
+          cert_path="$RUNNER_TEMP/apple-signing-cert.p12"
+          keychain_path="$RUNNER_TEMP/mcp-examiner-signing-${{ matrix.target }}.keychain-db"
+
+          printf '%s' "$APPLE_CERT_BASE64" | base64 --decode > "$cert_path" 2>/dev/null || \
+            printf '%s' "$APPLE_CERT_BASE64" | base64 -D > "$cert_path"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
+          security default-keychain -s "$keychain_path"
+          security list-keychains -d user -s "$keychain_path"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security import "$cert_path" -k "$keychain_path" -P "$APPLE_CERT_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$keychain_path"
+          security find-identity -v -p codesigning "$keychain_path"
+
+          echo "MCP_EXAMINER_TEMP_KEYCHAIN=$keychain_path" >> "$GITHUB_ENV"
+
+      - name: Build signed macOS application bundle
+        if: runner.os == 'macOS' && env.MACOS_SIGNING_SECRETS_PRESENT == 'true'
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        shell: bash
+        run: npm run tauri build -- --target ${{ matrix.target }} --bundles dmg --ci
+
+      - name: Build unsigned application bundles
+        if: runner.os != 'macOS' || env.MACOS_SIGNING_SECRETS_PRESENT != 'true'
+        shell: bash
+        run: npm run tauri build -- --target ${{ matrix.target }} --no-sign --ci
+
+      - name: Verify signed macOS application
+        if: runner.os == 'macOS' && env.MACOS_SIGNING_SECRETS_PRESENT == 'true'
+        shell: bash
+        run: |
+          app_path="$(find "target/${{ matrix.target }}/release/bundle/macos" -maxdepth 1 -name '*.app' -print -quit)"
+          if [[ -z "$app_path" ]]; then
+            echo "::error::No macOS application bundle was produced"
+            exit 1
+          fi
+
+          codesign --verify --deep --strict --verbose=2 "$app_path"
+
+      - name: Submit macOS DMG for notarization
+        if: runner.os == 'macOS' && env.MACOS_SIGNING_SECRETS_PRESENT == 'true' && env.MACOS_NOTARIZATION_SECRETS_PRESENT == 'true'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          dmg_path="$(find "target/${{ matrix.target }}/release/bundle/dmg" -maxdepth 1 -name '*.dmg' -print -quit)"
+          if [[ -z "$dmg_path" ]]; then
+            echo "::error::No macOS DMG was produced"
+            exit 1
+          fi
+
+          response_path="$RUNNER_TEMP/notarytool-${{ matrix.target }}.json"
+          xcrun notarytool submit "$dmg_path" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_APP_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --output-format json > "$response_path"
+
+          submission_id="$(jq -r '.id // empty' "$response_path")"
+          if [[ -z "$submission_id" ]]; then
+            echo "::error::Apple notarization submission did not return a submission id"
+            cat "$response_path"
+            exit 1
+          fi
+
+          jq -n \
+            --arg tag "$RELEASE_TAG" \
+            --arg target "${{ matrix.target }}" \
+            --arg asset_name "$(basename "$dmg_path")" \
+            --arg submission_id "$submission_id" \
+            --arg submitted_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '{tag: $tag, target: $target, asset_name: $asset_name, submission_id: $submission_id, submitted_at: $submitted_at}' \
+            > "notarization-${{ matrix.target }}.json"
+
+      - name: Upload notarization metadata
+        if: runner.os == 'macOS' && env.MACOS_SIGNING_SECRETS_PRESENT == 'true' && env.MACOS_NOTARIZATION_SECRETS_PRESENT == 'true'
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: notarization-${{ env.RELEASE_TAG }}-${{ matrix.target }}
+          path: notarization-${{ matrix.target }}.json
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Stage release packages
         shell: bash
@@ -134,9 +247,17 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - name: Clean up Apple signing keychain
+        if: runner.os == 'macOS' && always()
+        shell: bash
+        run: |
+          if [[ -n "${MCP_EXAMINER_TEMP_KEYCHAIN:-}" && -f "$MCP_EXAMINER_TEMP_KEYCHAIN" ]]; then
+            security delete-keychain "$MCP_EXAMINER_TEMP_KEYCHAIN"
+          fi
+
   publish:
     name: Publish GitHub release
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && startsWith(inputs.tag, 'v'))
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -149,6 +270,19 @@ jobs:
           path: release-assets
           merge-multiple: true
 
+      - name: Generate release checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          assets=(release-assets/*)
+          if (( ${#assets[@]} == 0 )); then
+            echo "::error::No release assets were downloaded"
+            exit 1
+          fi
+
+          (cd release-assets && sha256sum -- * > SHA256SUMS)
+
       - name: Publish release assets
         env:
           GH_TOKEN: ${{ github.token }}
@@ -160,12 +294,12 @@ jobs:
             exit 1
           fi
 
-          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --clobber "${assets[@]}"
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --clobber "${assets[@]}"
           else
-            gh release create "$GITHUB_REF_NAME" \
+            gh release create "$RELEASE_TAG" \
               --repo "$GITHUB_REPOSITORY" \
-              --title "MCP Examiner $GITHUB_REF_NAME" \
+              --title "MCP Examiner $RELEASE_TAG" \
               --generate-notes \
               "${assets[@]}"
           fi
