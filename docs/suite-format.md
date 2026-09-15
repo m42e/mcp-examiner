@@ -1,5 +1,7 @@
 # MCP Test Set Format
 
+This is the schema and assertion reference for the [MCP Examiner documentation](index.md). For a guided workflow, start with [Automated tests and reports](automation.md).
+
 MCP Examiner accepts JSON or YAML test sets matching [`mcp-test.schema.json`](../mcp-test.schema.json). A test set has a name and an ordered list of MCP calls. Calls run sequentially on one fresh connection.
 
 ```yaml
