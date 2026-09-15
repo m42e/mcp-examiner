@@ -273,8 +273,7 @@ impl StreamableHttpClient for ObservableHttpClient {
         .await;
         match result {
             Ok(()) => {
-                self.recorder
-                    .finish(index, Some("empty"), None, None, None);
+                self.recorder.finish(index, Some("empty"), None, None, None);
                 Ok(())
             }
             Err(error) => {
@@ -307,8 +306,7 @@ impl StreamableHttpClient for ObservableHttpClient {
         .await;
         match result {
             Ok(stream) => {
-                self.recorder
-                    .finish(index, Some("sse"), None, None, None);
+                self.recorder.finish(index, Some("sse"), None, None, None);
                 Ok(observe_sse_stream(stream, self.recorder.clone(), index))
             }
             Err(error) => {
@@ -343,8 +341,7 @@ impl StreamableHttpClient for ObservableHttpClient {
         .await;
         match result {
             Ok(stream) => {
-                self.recorder
-                    .finish(index, Some("sse"), None, None, None);
+                self.recorder.finish(index, Some("sse"), None, None, None);
                 Ok(observe_sse_stream(stream, self.recorder.clone(), index))
             }
             Err(error) => {

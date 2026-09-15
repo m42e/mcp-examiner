@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, HashMap},
     future::Future,
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -15,7 +16,7 @@ use rmcp::{
         RoleClient, RunningService,
     },
     transport::{
-        StreamableHttpClientTransport, TokioChildProcess,
+        AuthClient, StreamableHttpClientTransport, TokioChildProcess,
         streamable_http_client::StreamableHttpClientTransportConfig,
     },
 };
@@ -25,9 +26,9 @@ use thiserror::Error;
 use tokio::{process::Command, sync::Mutex, time::timeout};
 
 use crate::{
-    HttpObservation, ObservableHttpClient, PUBLISHED_PROTOCOL_VERSIONS, ProtocolSelection,
-    Redactor, ResolutionContext, ResolutionError, ServerProfile, TransportConfig,
-    TransportRecorder, resolve_profile,
+    HttpObservation, OAuthCredentialStore, ObservableHttpClient, PUBLISHED_PROTOCOL_VERSIONS,
+    ProtocolSelection, Redactor, ResolutionContext, ResolutionError, ServerProfile,
+    TransportConfig, TransportRecorder, oauth::authorization_manager, resolve_profile,
 };
 
 type LiveSession = RunningService<RoleClient, ClientInfo>;
@@ -50,6 +51,10 @@ pub enum ProtocolError {
     Spawn(#[from] std::io::Error),
     #[error("MCP connection failed: {0}")]
     Connect(String),
+    #[error("OAuth login required for MCP server")]
+    OAuthAuthorizationRequired,
+    #[error("OAuth error: {0}")]
+    OAuth(String),
     #[error("automatic discovery failed ({discover}); legacy fallback failed ({legacy})")]
     AutoFallback { discover: String, legacy: String },
     #[error("MCP request timed out after {0} ms")]
@@ -198,6 +203,16 @@ impl SessionManager {
         profile: &ServerProfile,
         context: &ResolutionContext,
     ) -> Result<ConnectionSnapshot, ProtocolError> {
+        self.connect_with_context_and_oauth_store(profile, context, None)
+            .await
+    }
+
+    pub async fn connect_with_context_and_oauth_store(
+        &self,
+        profile: &ServerProfile,
+        context: &ResolutionContext,
+        oauth_store: Option<Arc<dyn OAuthCredentialStore>>,
+    ) -> Result<ConnectionSnapshot, ProtocolError> {
         let redactor = Redactor::for_connection(profile, context);
         let profile = resolve_profile(profile, context)?;
         if !profile.trusted {
@@ -240,33 +255,31 @@ impl SessionManager {
                 (session, None)
             }
             TransportConfig::Http { url, headers, .. }
-              | TransportConfig::Auto { url, headers, .. } => {
+            | TransportConfig::Auto { url, headers, .. } => {
                 let recorder = TransportRecorder::new(redactor.clone());
                 let config = StreamableHttpClientTransportConfig::with_uri(url.clone())
                     .custom_headers(parse_headers(headers)?);
-                let transport = StreamableHttpClientTransport::with_client(
-                    ObservableHttpClient::new(recorder.clone()),
-                    config,
-                );
-                let connection = await_connection(
-                    client_info.serve_with_lifecycle(transport, lifecycle),
-                    profile.timeout_ms,
-                )
-                .await;
-                let session = match connection {
-                    Ok(session) => session,
-                    Err(discover_error)
-                        if matches!(profile.protocol, ProtocolSelection::Auto { .. }) =>
-                    {
-                        let ProtocolSelection::Auto { legacy_version } = &profile.protocol else {
-                            unreachable!()
-                        };
-                        let fallback_selection = ProtocolSelection::Legacy {
-                            version: legacy_version.clone(),
-                        };
-                        let (client_info, lifecycle, _) = protocol_setup(&fallback_selection)?;
-                        let config = StreamableHttpClientTransportConfig::with_uri(url.clone())
-                            .custom_headers(parse_headers(headers)?);
+                let mut oauth_manager =
+                    authorization_manager(&profile, oauth_store.clone()).await?;
+                if let Some(manager) = oauth_manager.as_mut() {
+                    manager
+                        .initialize_from_store()
+                        .await
+                        .map_err(|error| ProtocolError::OAuth(error.to_string()))?;
+                }
+                let connection = match oauth_manager {
+                    Some(manager) => {
+                        let transport = StreamableHttpClientTransport::with_client(
+                            AuthClient::new(ObservableHttpClient::new(recorder.clone()), manager),
+                            config,
+                        );
+                        await_connection(
+                            client_info.serve_with_lifecycle(transport, lifecycle),
+                            profile.timeout_ms,
+                        )
+                        .await
+                    }
+                    None => {
                         let transport = StreamableHttpClientTransport::with_client(
                             ObservableHttpClient::new(recorder.clone()),
                             config,
@@ -276,12 +289,72 @@ impl SessionManager {
                             profile.timeout_ms,
                         )
                         .await
-                        .map_err(|legacy_error| {
-                            ProtocolError::AutoFallback {
-                                discover: discover_error.to_string(),
-                                legacy: legacy_error.to_string(),
+                    }
+                };
+                let session = match connection {
+                    Ok(session) => session,
+                    Err(discover_error)
+                        if matches!(profile.protocol, ProtocolSelection::Auto { .. }) =>
+                    {
+                        if matches!(discover_error, ProtocolError::OAuthAuthorizationRequired) {
+                            return Err(ProtocolError::OAuthAuthorizationRequired);
+                        }
+                        let ProtocolSelection::Auto { legacy_version } = &profile.protocol else {
+                            unreachable!()
+                        };
+                        let fallback_selection = ProtocolSelection::Legacy {
+                            version: legacy_version.clone(),
+                        };
+                        let (client_info, lifecycle, _) = protocol_setup(&fallback_selection)?;
+                        let config = StreamableHttpClientTransportConfig::with_uri(url.clone())
+                            .custom_headers(parse_headers(headers)?);
+                        let mut oauth_manager =
+                            authorization_manager(&profile, oauth_store.clone()).await?;
+                        if let Some(manager) = oauth_manager.as_mut() {
+                            manager
+                                .initialize_from_store()
+                                .await
+                                .map_err(|error| ProtocolError::OAuth(error.to_string()))?;
+                        }
+                        let connection = match oauth_manager {
+                            Some(manager) => {
+                                let transport = StreamableHttpClientTransport::with_client(
+                                    AuthClient::new(
+                                        ObservableHttpClient::new(recorder.clone()),
+                                        manager,
+                                    ),
+                                    config,
+                                );
+                                await_connection(
+                                    client_info.serve_with_lifecycle(transport, lifecycle),
+                                    profile.timeout_ms,
+                                )
+                                .await
                             }
-                        })?
+                            None => {
+                                let transport = StreamableHttpClientTransport::with_client(
+                                    ObservableHttpClient::new(recorder.clone()),
+                                    config,
+                                );
+                                await_connection(
+                                    client_info.serve_with_lifecycle(transport, lifecycle),
+                                    profile.timeout_ms,
+                                )
+                                .await
+                            }
+                        };
+                        match connection {
+                            Ok(session) => session,
+                            Err(ProtocolError::OAuthAuthorizationRequired) => {
+                                return Err(ProtocolError::OAuthAuthorizationRequired);
+                            }
+                            Err(legacy_error) => {
+                                return Err(ProtocolError::AutoFallback {
+                                    discover: discover_error.to_string(),
+                                    legacy: legacy_error.to_string(),
+                                });
+                            }
+                        }
                     }
                     Err(error) => return Err(error),
                 };
@@ -672,10 +745,16 @@ where
         Some(timeout_ms) => timeout(Duration::from_millis(timeout_ms), connect_future)
             .await
             .map_err(|_| ProtocolError::Timeout(timeout_ms))?
-            .map_err(|error| ProtocolError::Connect(error.to_string())),
-        None => connect_future
-            .await
-            .map_err(|error| ProtocolError::Connect(error.to_string())),
+            .map_err(connection_error),
+        None => connect_future.await.map_err(connection_error),
+    }
+}
+
+fn connection_error(error: ClientInitializeError) -> ProtocolError {
+    if error.is_authorization_required() {
+        ProtocolError::OAuthAuthorizationRequired
+    } else {
+        ProtocolError::Connect(error.to_string())
     }
 }
 
@@ -715,7 +794,7 @@ fn parse_headers(
 
 fn transport_name(transport: &TransportConfig) -> &'static str {
     match transport {
-         TransportConfig::Stdio { .. } => "stdio",
+        TransportConfig::Stdio { .. } => "stdio",
         TransportConfig::Http { .. } => "http",
         TransportConfig::Sse { .. } => "sse",
         TransportConfig::Auto { .. } => "auto",
@@ -915,9 +994,10 @@ mod tests {
         assert!(observations.iter().any(|event| event.method == "POST"));
         assert!(observations.iter().any(|event| event.method == "DELETE"));
         assert!(observations.iter().any(|event| {
-            event.response_body.as_ref().is_some_and(|body| {
-                body["result"]["content"][0]["text"] == "over http"
-            })
+            event
+                .response_body
+                .as_ref()
+                .is_some_and(|body| body["result"]["content"][0]["text"] == "over http")
         }));
         let serialized = serde_json::to_string(&observations).unwrap();
         assert!(!serialized.contains("http-secret-4d2a"));
@@ -959,7 +1039,8 @@ mod tests {
     #[tokio::test]
     #[ignore = "requires MCP_EXAMINER_TEST_URL and network access"]
     async fn connects_to_external_http_server_when_configured() {
-        let url = std::env::var("MCP_EXAMINER_TEST_URL").expect("MCP_EXAMINER_TEST_URL is required");
+        let url =
+            std::env::var("MCP_EXAMINER_TEST_URL").expect("MCP_EXAMINER_TEST_URL is required");
         let profile = ServerProfile {
             format_version: FORMAT_VERSION,
             name: "external-http".to_owned(),

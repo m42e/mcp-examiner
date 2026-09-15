@@ -1,13 +1,16 @@
+use std::sync::Arc;
+
 use mcp_examiner_core::{
-    AppInfo, ConfigSourceKind, ConnectionSnapshot, HttpObservation, ImportResult, ProtocolEvent,
-    Redactor, ResolutionContext, RunProgress, ServerProfile, SessionManager, TestRunResult,
-    import_config, parse_test_set, render_html_report, render_yaml_report,
-    run_test_set_with_progress,
+    AppInfo, ConfigSourceKind, ConnectionSnapshot, HttpObservation, ImportResult,
+    OAuthCredentialStore, ProtocolEvent, Redactor, ResolutionContext, RunProgress, ServerProfile,
+    SessionManager, TestRunResult, TransportConfig, import_config, parse_test_set,
+    render_html_report, render_yaml_report, resolve_profile, run_test_set_with_oauth_store,
 };
 use serde::Deserialize;
 use serde_json::Value;
 use tauri::{AppHandle, State, ipc::Channel};
 
+mod oauth;
 mod secrets;
 
 #[cfg(all(debug_assertions, not(feature = "custom-protocol")))]
@@ -53,6 +56,13 @@ struct PromptGetRequest {
 struct AutomatedRunRequest {
     profile: ServerProfile,
     content: String,
+    context: Option<ResolutionContext>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OAuthLoginRequest {
+    profile: ServerProfile,
     context: Option<ResolutionContext>,
 }
 
@@ -162,11 +172,22 @@ async fn run_automated_test(
         context.inputs = request_context.inputs;
     }
     secrets::hydrate_context(&request.profile, &mut context);
-    let result = run_test_set_with_progress(
+    let oauth_store = match &request.profile.transport {
+        TransportConfig::Http { .. }
+        | TransportConfig::Sse { .. }
+        | TransportConfig::Auto { .. } => {
+            let resolved_profile =
+                resolve_profile(&request.profile, &context).map_err(|error| error.to_string())?;
+            Some(Arc::new(secrets::oauth_store(&resolved_profile)?) as Arc<dyn OAuthCredentialStore>)
+        }
+        _ => None,
+    };
+    let result = run_test_set_with_oauth_store(
         &sessions,
         &request.profile,
         &context,
         &test_set,
+        oauth_store,
         move |progress| {
             let _ = on_progress.send(progress);
         },
@@ -228,8 +249,18 @@ async fn connect_server(
     }
     secrets::hydrate_context(&profile, &mut resolved_context);
     let redactor = Redactor::for_connection(&profile, &resolved_context);
+    let resolved_profile =
+        resolve_profile(&profile, &resolved_context).map_err(|error| error.to_string())?;
+    let oauth_store = match &resolved_profile.transport {
+        TransportConfig::Http { .. }
+        | TransportConfig::Sse { .. }
+        | TransportConfig::Auto { .. } => {
+            Some(Arc::new(secrets::oauth_store(&resolved_profile)?) as Arc<dyn OAuthCredentialStore>)
+        }
+        _ => None,
+    };
     let result = sessions
-        .connect_with_context(&profile, &resolved_context)
+        .connect_with_context_and_oauth_store(&profile, &resolved_context, oauth_store)
         .await;
     match result {
         Ok(snapshot) => {
@@ -241,10 +272,37 @@ async fn connect_server(
         }
         Err(error) => {
             let error = redactor.redact_text(&error.to_string());
-            eprintln!("MCP Examiner: connection '{}' failed: {error}", profile.name);
+            eprintln!(
+                "MCP Examiner: connection '{}' failed: {error}",
+                profile.name
+            );
             Err(error)
         }
     }
+}
+
+#[tauri::command]
+async fn oauth_login(app: AppHandle, request: OAuthLoginRequest) -> Result<(), String> {
+    let mut context = ResolutionContext::from_process();
+    if let Some(request_context) = request.context {
+        if request_context.workspace_folder.is_some() {
+            context.workspace_folder = request_context.workspace_folder;
+        }
+        context.environment.extend(request_context.environment);
+        context.inputs = request_context.inputs;
+    }
+    secrets::hydrate_context(&request.profile, &mut context);
+    let profile = resolve_profile(&request.profile, &context).map_err(|error| error.to_string())?;
+    if !profile.trusted {
+        return Err(format!(
+            "server profile '{}' has not been trusted",
+            profile.name
+        ));
+    }
+    let redactor = Redactor::for_connection(&profile, &context);
+    oauth::login(app, profile)
+        .await
+        .map_err(|error| redactor.redact_text(&error))
 }
 
 #[tauri::command]
@@ -333,6 +391,7 @@ pub fn run() {
             run_automated_test,
             save_report_bundle,
             connect_server,
+            oauth_login,
             call_tool,
             disconnect_server,
             session_events,

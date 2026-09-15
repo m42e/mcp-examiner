@@ -31,6 +31,82 @@
   margin-top: 20px;
 }
 
+.recent-configs {
+  width: min(100%, 560px);
+  margin-top: 24px;
+  text-align: left;
+}
+
+.recent-configs-heading {
+  display: block;
+  margin: 0 0 8px 2px;
+  color: #777d73;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.recent-config-list {
+  display: grid;
+  gap: 6px;
+  max-height: min(280px, 30vh);
+  overflow-y: auto;
+}
+
+.recent-config-button {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: 24px minmax(0, 1fr) 16px;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  color: #3f463d;
+  text-align: left;
+  background: rgba(249, 250, 246, 0.86);
+  border: 1px solid #d8dad2;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.recent-config-button:hover {
+  background: #fff;
+  border-color: #aeb4a8;
+}
+
+.recent-config-button > svg:first-child {
+  color: var(--accent);
+}
+
+.recent-config-button > svg:last-child {
+  color: #8b9286;
+}
+
+.recent-config-button > span {
+  min-width: 0;
+}
+
+.recent-config-button strong,
+.recent-config-button small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recent-config-button strong {
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.recent-config-button small {
+  margin-top: 3px;
+  color: #7b8277;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 9px;
+}
+
 .supported-row {
   display: flex;
   align-items: center;

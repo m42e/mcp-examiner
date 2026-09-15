@@ -7,6 +7,7 @@ rust-version.workspace = true
 description = "Protocol, configuration, test, and report engine for MCP Examiner"
 
 [dependencies]
+async-trait.workspace = true
 dotenvy.workspace = true
 futures.workspace = true
 http.workspace = true

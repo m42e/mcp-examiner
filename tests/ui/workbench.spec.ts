@@ -22,6 +22,27 @@ test("renders the desktop workbench and import dialog", async ({ page }) => {
   await page.screenshot({ path: "test-results/workbench-desktop.png" });
 });
 
+test("keeps the default font size and persists the selected setting", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(() => localStorage.removeItem("mcp-examiner.font-scale"));
+  await page.reload();
+
+  await expect(page.locator(".app-shell")).toHaveAttribute("data-font-scale", "1");
+  await page.getByRole("button", { name: "Open settings" }).click();
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  await expect(settings.getByRole("button", { name: "Default" })).toHaveAttribute("aria-pressed", "true");
+
+  await settings.getByRole("button", { name: "Large 115%" }).click();
+  await expect(page.locator(".app-shell")).toHaveAttribute("data-font-scale", "1.15");
+  await expect(settings.getByRole("button", { name: "Large 115%" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".app-shell")).toHaveCSS("zoom", "1.15");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await expect(page.evaluate(() => localStorage.getItem("mcp-examiner.font-scale"))).resolves.toBe("1.15");
+
+  await page.reload();
+  await expect(page.locator(".app-shell")).toHaveAttribute("data-font-scale", "1.15");
+});
+
 test("keeps primary controls inside a narrow viewport", async ({ page }) => {
   await page.setViewportSize({ width: 720, height: 820 });
   await page.goto("/");
@@ -37,6 +58,77 @@ test("keeps primary controls inside a narrow viewport", async ({ page }) => {
   expect(hasHorizontalOverflow).toBe(false);
 
   await page.screenshot({ path: "test-results/workbench-narrow.png" });
+});
+
+test("loads a recent config from the empty workspace and titlebar menu", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      "mcp-examiner.recent-configs",
+      JSON.stringify([{ path: "/tmp/previous.mcp.json" }]),
+    );
+    const runtime = window as typeof window & {
+      __TAURI_INTERNALS__: {
+        invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown>;
+        transformCallback: (callback: (payload: unknown) => void) => number;
+        unregisterCallback: (id: number) => void;
+        runCallback: (id: number, payload: unknown) => void;
+      };
+    };
+    runtime.__TAURI_INTERNALS__ = {
+      invoke: async (command) => {
+        if (command === "app_info") {
+          return {
+            name: "MCP Examiner",
+            version: "0.1.0",
+            formatVersion: 1,
+            protocolVersions: ["2025-11-25"],
+          };
+        }
+        if (command === "list_secrets") return [];
+        if (command === "read_document") return '{"mcpServers":{"recent-server":{"command":"node"}}}';
+        if (command === "import_config_preview") {
+          return {
+            formatVersion: 1,
+            sourceKind: "generic",
+            diagnostics: [],
+            inputs: [],
+            profiles: [
+              {
+                formatVersion: 1,
+                name: "recent-server",
+                transport: {
+                  type: "stdio",
+                  command: "node",
+                  args: [],
+                  cwd: null,
+                  env: {},
+                  envFile: null,
+                },
+                protocol: { mode: "auto", legacyVersion: null },
+                source: { kind: "generic", path: "/tmp/previous.mcp.json", scope: null },
+                timeoutMs: 5000,
+                trusted: false,
+              },
+            ],
+          };
+        }
+        throw new Error(`Unexpected command: ${command}`);
+      },
+      transformCallback: () => 1,
+      unregisterCallback: () => undefined,
+      runCallback: () => undefined,
+    };
+  });
+
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: /previous\.mcp\.json/ })).toBeVisible();
+  await page.getByRole("button", { name: /previous\.mcp\.json/ }).click();
+  await expect(page.getByRole("heading", { name: "recent-server" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Load configuration" }).click();
+  const configMenu = page.getByRole("menu", { name: "Configurations" });
+  await expect(configMenu).toBeVisible();
+  await expect(configMenu.getByRole("menuitem", { name: /previous\.mcp\.json/ })).toBeVisible();
 });
 
 test("opens the managed secrets dialog from the server rail", async ({ page }) => {
@@ -202,13 +294,13 @@ test("imports, connects, and exercises manual server primitives", async ({ page 
               {
                 name: "echo",
                 title: "Echo",
-                description: "Return the supplied message",
+                description: "Return the **supplied** message.\n\n    - Supports `echo` output.\n    - Keeps the response concise.",
                 inputSchema: {
                   type: "object",
                   properties: {
                     message: {
                       type: "string",
-                      description: "The message to return in the tool response.",
+                      description: "    The **message** to return in the tool response.",
                     },
                     mode: {
                       type: "string",
@@ -439,7 +531,7 @@ test("imports, connects, and exercises manual server primitives", async ({ page 
   await expect(page.getByLabel("1 resources")).toBeVisible();
   await expect(page.getByLabel("1 prompts")).toBeVisible();
   await expect(page.getByLabel("2 messages")).toBeVisible();
-  await expect(page.getByLabel("1 tests")).toBeVisible();
+  await expect(page.getByLabel("0 tests")).toBeVisible();
 
   await page.getByRole("button", { name: "Tests" }).click();
   await page.getByRole("button", { name: "Generate" }).click();
@@ -453,14 +545,15 @@ test("imports, connects, and exercises manual server primitives", async ({ page 
   for (const checkbox of await generateDialog.getByRole("checkbox").all()) {
     await expect(checkbox).not.toBeChecked();
   }
-  await expect(generateDialog.getByRole("button", { name: "Replace and generate" })).toBeDisabled();
+  await expect(generateDialog.getByRole("button", { name: "Generate selected" })).toBeDisabled();
   await generateDialog.getByRole("button", { name: "Select all" }).click();
   await generateDialog.getByRole("button", { name: "Cancel" }).click();
-  await expect(page.getByLabel("Test set source")).toHaveValue(/Server smoke test/);
+  await expect(page.getByLabel("Test set source")).toHaveValue("");
+  await expect(page.getByLabel("Test set source")).toHaveAttribute("placeholder", /Server smoke test/);
 
   await page.getByRole("button", { name: "Generate" }).click();
   await generateDialog.getByRole("checkbox", { name: /Fixture Readme/ }).uncheck();
-  await generateDialog.getByRole("button", { name: "Replace and generate" }).click();
+  await generateDialog.getByRole("button", { name: "Generate selected" }).click();
   const generatedSource = page.getByLabel("Test set source");
   await expect(generatedSource).toHaveValue(/"name": "echo"/);
   await expect(generatedSource).not.toHaveValue(/"uri": "fixture:\/\/readme"/);
@@ -471,11 +564,23 @@ test("imports, connects, and exercises manual server primitives", async ({ page 
   await expect(page.getByLabel("2 tests")).toBeVisible();
   await page.getByRole("button", { name: "Tools" }).click();
 
+  const markdownToggle = page.getByRole("button", { name: /formatted descriptions/ });
+  await expect(markdownToggle).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".tool-description strong")).toHaveText("supplied");
+  await expect(page.locator(".tool-description pre")).toHaveCount(0);
+  await expect(page.locator(".tool-description ul")).toBeVisible();
+  await expect(page.locator(".schema-field-description strong")).toHaveText("message");
+  await markdownToggle.click();
+  await expect(page.getByRole("button", { name: "Enable formatted descriptions" })).toHaveAttribute("aria-pressed", "false");
+  await expect(page.locator(".tool-description strong")).toHaveCount(0);
+  await expect(page.locator(".tool-description")).toContainText("Return the **supplied** message.");
+  await markdownToggle.click();
+
   const argumentLayout = await page.locator(".schema-fields").first().evaluate((form) => ({
     fits: form.scrollWidth <= form.clientWidth,
     fields: [...form.querySelectorAll(":scope > .schema-field")].map((field) => {
       const label = field.querySelector(":scope > span")?.getBoundingClientRect();
-      const description = field.querySelector(":scope > small")?.getBoundingClientRect();
+      const description = field.querySelector(":scope > .schema-field-description")?.getBoundingClientRect();
       const control = field.querySelector(":scope > input, :scope > select")?.getBoundingClientRect();
       const bounds = field.getBoundingClientRect();
       return {
@@ -486,11 +591,58 @@ test("imports, connects, and exercises manual server primitives", async ({ page 
   }));
   expect(argumentLayout.fits).toBe(true);
   expect(argumentLayout.fields.every((field) => field.stacked && field.contained)).toBe(true);
+  const detailSizing = await page.locator(".tool-detail").evaluate((detail) => {
+    const description = detail.querySelector(".tool-description");
+    const editorGrid = detail.querySelector(".tool-editor-grid");
+    const schemaPre = detail.querySelector(".tool-schema pre");
+    if (!description || !editorGrid || !schemaPre) throw new Error("Tool detail sizing elements are missing");
+    const detailStyle = getComputedStyle(detail);
+    const descriptionRect = description.getBoundingClientRect();
+    const editorGridRect = editorGrid.getBoundingClientRect();
+    const schemaPreRect = schemaPre.getBoundingClientRect();
+    const detailContentWidth = detail.clientWidth - parseFloat(detailStyle.paddingLeft) - parseFloat(detailStyle.paddingRight);
+    return {
+      descriptionMaxWidth: getComputedStyle(description).maxWidth,
+      descriptionUsesFullWidth: Math.abs(descriptionRect.width - detailContentWidth) <= 1,
+      schemaReachesEditorBottom: Math.abs(schemaPreRect.bottom - editorGridRect.bottom) <= 1,
+    };
+  });
+  expect(detailSizing.descriptionMaxWidth).toBe("none");
+  expect(detailSizing.descriptionUsesFullWidth).toBe(true);
+  expect(detailSizing.schemaReachesEditorBottom).toBe(true);
+  const schemaPanel = page.locator(".tool-schema");
+  await schemaPanel.getByRole("button", { name: "Enable input schema wrapping" }).click();
+  await expect(schemaPanel.getByRole("button", { name: "Disable input schema wrapping" })).toHaveAttribute("aria-pressed", "true");
+  await expect(schemaPanel.locator("pre")).toHaveCSS("white-space", "pre-wrap");
+  await schemaPanel.getByRole("button", { name: "Expand input schema" }).click();
+  await expect(page.locator(".tool-editor-grid")).toHaveClass(/schema-expanded/);
+  await expect(page.locator(".schema-editor")).toBeHidden();
+  await expect(schemaPanel.getByRole("button", { name: "Restore input schema" })).toBeVisible();
+  await schemaPanel.getByRole("button", { name: "Restore input schema" }).click();
+  await expect(page.locator(".schema-editor")).toBeVisible();
+  await schemaPanel.getByRole("button", { name: "Disable input schema wrapping" }).click();
+  await expect(schemaPanel.locator("pre")).toHaveCSS("white-space", "pre");
   await page.screenshot({ path: "test-results/workbench-tools.png" });
 
   await page.setViewportSize({ width: 720, height: 820 });
   expect(await page.locator(".tool-detail").evaluate((detail) => detail.scrollWidth <= detail.clientWidth)).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  const toolScrollLayout = await page.locator(".tool-detail").evaluate((detail) => {
+    const workbench = detail.closest(".tools-workbench");
+    const workspaceContent = detail.closest(".workspace-content");
+    if (!workbench || !workspaceContent) throw new Error("Tool workbench is missing its workspace container");
+    const detailStyle = getComputedStyle(detail);
+    return {
+      detailOverflowY: detailStyle.overflowY,
+      detailScrollable: detail.scrollHeight > detail.clientHeight,
+      workbenchFitsWorkspace: workbench.getBoundingClientRect().bottom <= workspaceContent.getBoundingClientRect().bottom,
+      workspaceHasNoVerticalOverflow: workspaceContent.scrollHeight <= workspaceContent.clientHeight,
+    };
+  });
+  expect(toolScrollLayout.detailOverflowY).toBe("auto");
+  expect(toolScrollLayout.detailScrollable).toBe(true);
+  expect(toolScrollLayout.workbenchFitsWorkspace).toBe(true);
+  expect(toolScrollLayout.workspaceHasNoVerticalOverflow).toBe(true);
   await page.screenshot({ path: "test-results/workbench-tools-narrow.png" });
   await page.setViewportSize({ width: 1440, height: 920 });
 

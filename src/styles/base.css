@@ -51,11 +51,20 @@ button {
   grid-template-columns: 258px minmax(0, 1fr);
   grid-template-rows: 52px minmax(0, 1fr);
   height: 100%;
+  zoom: 1;
   background:
     linear-gradient(rgba(47, 52, 44, 0.025) 1px, transparent 1px),
     linear-gradient(90deg, rgba(47, 52, 44, 0.025) 1px, transparent 1px),
     #eff0eb;
   background-size: 28px 28px;
+}
+
+.app-shell[data-font-scale="1.15"] {
+  zoom: 1.15;
+}
+
+.app-shell[data-font-scale="1.3"] {
+  zoom: 1.3;
 }
 
 .titlebar {
@@ -94,6 +103,240 @@ button {
   color: #fff8f1;
   background: var(--accent);
   border-radius: 5px;
+  overflow: hidden;
+}
+
+.brand-mark img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.config-menu {
+  position: relative;
+  margin-left: -6px;
+}
+
+.settings-menu {
+  position: relative;
+}
+
+.config-menu-trigger {
+  display: inline-grid;
+  width: 25px;
+  height: 28px;
+  place-items: center;
+  padding: 0;
+  color: #9ba198;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.config-menu-trigger:hover,
+.config-menu-trigger[aria-expanded="true"] {
+  color: #f5f7f2;
+  background: #2c312a;
+  border-color: #3a4038;
+}
+
+.config-menu-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 20;
+  display: flex;
+  width: min(310px, calc(100vw - 24px));
+  max-height: min(480px, calc(100vh - 76px));
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px;
+  color: #e9ece6;
+  background: #252a24;
+  border: 1px solid #424a40;
+  border-radius: 6px;
+  box-shadow: 0 14px 32px rgba(11, 13, 11, 0.32);
+  overflow-y: auto;
+}
+
+.config-menu-heading,
+.config-menu-empty {
+  padding: 5px 8px;
+  color: #929b8e;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.config-menu-empty {
+  padding-top: 9px;
+  padding-bottom: 9px;
+  color: #6f786c;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.config-menu-item,
+.config-menu-open {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  padding: 8px;
+  color: #e3e8df;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.config-menu-item:hover,
+.config-menu-open:hover {
+  background: #31382f;
+  border-color: #465044;
+}
+
+.config-menu-item > svg,
+.config-menu-open > svg {
+  color: #f09b83;
+}
+
+.config-menu-item > span {
+  min-width: 0;
+}
+
+.config-menu-item strong,
+.config-menu-item small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.config-menu-item strong {
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.config-menu-item small {
+  margin-top: 2px;
+  color: #929b8e;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 9px;
+}
+
+.config-menu-divider {
+  height: 1px;
+  margin: 5px 0;
+  background: #3a4238;
+}
+
+.config-menu-open {
+  color: #f0f3ed;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.settings-menu-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 20;
+  width: min(250px, calc(100vw - 24px));
+  padding: 12px;
+  color: #e9ece6;
+  background: #252a24;
+  border: 1px solid #424a40;
+  border-radius: 6px;
+  box-shadow: 0 14px 32px rgba(11, 13, 11, 0.32);
+}
+
+.settings-menu-header {
+  display: grid;
+  gap: 3px;
+  padding: 1px 2px 10px;
+  border-bottom: 1px solid #3a4238;
+}
+
+.settings-menu-header strong {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.settings-menu-header span {
+  color: #929b8e;
+  font-size: 9px;
+}
+
+.settings-menu-control {
+  display: grid;
+  gap: 8px;
+  padding: 12px 2px 1px;
+}
+
+.settings-menu-label {
+  color: #cbd1c7;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.settings-size-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.settings-size-option {
+  display: grid;
+  min-width: 0;
+  min-height: 44px;
+  align-content: center;
+  gap: 3px;
+  padding: 6px 4px;
+  color: #b9c0b5;
+  background: #20251f;
+  border: 1px solid #3a4238;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.settings-size-option:hover {
+  color: #f0f3ed;
+  border-color: #657060;
+}
+
+.settings-size-option[aria-pressed="true"] {
+  color: #fff8f1;
+  background: #713d30;
+  border-color: #e0785c;
+}
+
+.settings-size-option strong,
+.settings-size-option small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-size-option strong {
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.settings-size-option small {
+  color: #929b8e;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 9px;
+}
+
+.settings-size-option[aria-pressed="true"] small {
+  color: #f0b09f;
 }
 
 .brand-name {

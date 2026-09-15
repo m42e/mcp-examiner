@@ -1,4 +1,4 @@
-import { ChevronDown, LoaderCircle, Pencil, PlugZap, Unplug } from "lucide-react";
+import { ChevronDown, LoaderCircle, LogIn, Pencil, PlugZap, Unplug } from "lucide-react";
 import type { AppInfo, ConnectionSnapshot, ServerProfile } from "../../contracts";
 import { endpointLabel, protocolValue } from "../../lib/profile";
 
@@ -7,9 +7,12 @@ export type ServerHeaderProps = {
   connection: ConnectionSnapshot | null;
   canConnect: boolean;
   connecting: boolean;
+  oauthConfigured: boolean;
+  oauthLoggingIn: boolean;
   protocolVersions: AppInfo["protocolVersions"];
   onEdit: () => void;
   onProtocolChange: (value: string) => void;
+  onOAuthLogin: () => void;
   onConnect: () => void;
   onDisconnect: () => void;
 };
@@ -19,9 +22,12 @@ export function ServerHeader({
   connection,
   canConnect,
   connecting,
+  oauthConfigured,
+  oauthLoggingIn,
   protocolVersions,
   onEdit,
   onProtocolChange,
+  onOAuthLogin,
   onConnect,
   onDisconnect,
 }: ServerHeaderProps) {
@@ -65,6 +71,17 @@ export function ServerHeader({
           </select>
           <ChevronDown size={14} aria-hidden="true" />
         </label>
+        {oauthConfigured && !connection && (
+          <button
+            className="secondary-button"
+            type="button"
+            onClick={onOAuthLogin}
+            disabled={!canConnect || connecting || oauthLoggingIn}
+          >
+            {oauthLoggingIn ? <LoaderCircle className="spin" size={16} /> : <LogIn size={16} />}
+            {oauthLoggingIn ? "Logging in" : "Log in"}
+          </button>
+        )}
         {connection ? (
           <button
             className="secondary-button"

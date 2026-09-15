@@ -54,6 +54,10 @@ export type ServerProfile = {
   trusted: boolean;
 };
 
+export type RecentConfig = {
+  path: string;
+};
+
 export type ImportDiagnostic = {
   level: "info" | "warning" | "error";
   server: string | null;

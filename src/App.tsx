@@ -8,6 +8,7 @@ import type {
   ConnectionSnapshot,
   ImportResult,
   ProtocolEvent,
+  RecentConfig,
   ServerProfile,
   SecretSummary,
 } from "./contracts";
@@ -16,6 +17,7 @@ import {
   emptyServerDraft,
   profileDraft,
   protocolFromValue,
+  oauthConfigured,
   referencedInputIds,
   referencedSecretIds,
   serializeProfiles,
@@ -40,7 +42,11 @@ import { ProtocolPanel } from "./components/panels/ProtocolPanel";
 import { ConsolePanel } from "./components/panels/ConsolePanel";
 import { DisconnectedPanel } from "./components/panels/DisconnectedPanel";
 import { AutomationPanel } from "./components/panels/AutomationPanel";
-import { Titlebar } from "./components/shell/Titlebar";
+import {
+  fontScaleOptions,
+  Titlebar,
+  type FontScale,
+} from "./components/shell/Titlebar";
 import { ServerRail } from "./components/shell/ServerRail";
 import { ServerHeader } from "./components/shell/ServerHeader";
 import { WorkspaceTabs } from "./components/shell/WorkspaceTabs";
@@ -72,18 +78,53 @@ const exampleConfig = `{
   }
 }`;
 
-const exampleTestSet = `name: Server smoke test
-calls:
-  - type: callTool
-    name: echo
-    arguments:
-      message: hello
-    expect:
-      contains: hello
-`;
+const emptyTestDocument: TestDocument = { content: "", path: null };
+const recentConfigsStorageKey = "mcp-examiner.recent-configs";
+const fontScaleStorageKey = "mcp-examiner.font-scale";
+const maxRecentConfigs = 8;
+
+function readFontScale(): FontScale {
+  if (typeof window === "undefined") return fontScaleOptions[0].value;
+  try {
+    const storedValue = Number(window.localStorage.getItem(fontScaleStorageKey));
+    return (
+      fontScaleOptions.find((option) => option.value === storedValue)?.value ??
+      fontScaleOptions[0].value
+    );
+  } catch {
+    return fontScaleOptions[0].value;
+  }
+}
+
+function readRecentConfigs(): RecentConfig[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const value: unknown = JSON.parse(
+      window.localStorage.getItem(recentConfigsStorageKey) ?? "[]",
+    );
+    if (!Array.isArray(value)) return [];
+    const paths = value.filter(
+      (entry): entry is RecentConfig =>
+        typeof entry === "object" &&
+        entry !== null &&
+        typeof (entry as { path?: unknown }).path === "string" &&
+        (entry as { path: string }).path.trim().length > 0,
+    );
+    return paths
+      .filter(
+        (entry, index) =>
+          paths.findIndex((candidate) => candidate.path === entry.path) === index,
+      )
+      .slice(0, maxRecentConfigs);
+  } catch {
+    return [];
+  }
+}
 
 function App() {
   const [appInfo, setAppInfo] = useState(fallbackInfo);
+  const [fontScale, setFontScale] = useState<FontScale>(readFontScale);
+  const [recentConfigs, setRecentConfigs] = useState<RecentConfig[]>(readRecentConfigs);
   const [profiles, setProfiles] = useState<ServerProfile[]>([]);
   const [selectedName, setSelectedName] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>("overview");
@@ -100,6 +141,7 @@ function App() {
     Record<string, ConnectionSnapshot>
   >({});
   const [connectingName, setConnectingName] = useState<string | null>(null);
+  const [oauthLoginName, setOauthLoginName] = useState<string | null>(null);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [connectionToastVisible, setConnectionToastVisible] = useState(false);
   const [protocolCounts, setProtocolCounts] = useState<Record<string, number>>({});
@@ -130,11 +172,23 @@ function App() {
     void refreshSecrets();
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(
+        recentConfigsStorageKey,
+        JSON.stringify(recentConfigs),
+      );
+      window.localStorage.setItem(fontScaleStorageKey, String(fontScale));
+    } catch {
+    }
+  }, [fontScale, recentConfigs]);
+
   const selectedProfile =
     profiles.find((profile) => profile.name === selectedName) ?? null;
   const selectedConnection = selectedName ? connections[selectedName] : null;
   const selectedTestDocument = selectedProfile
-    ? testDocuments[selectedProfile.name] ?? { content: exampleTestSet, path: null }
+    ? testDocuments[selectedProfile.name] ?? emptyTestDocument
     : null;
   const selectedTestRun = selectedProfile
     ? testRuns[selectedProfile.name] ?? emptyTestRunState()
@@ -230,10 +284,18 @@ function App() {
         request: { path, content: importContent },
       });
       setImportPath(savedPath);
+      rememberRecentConfig(savedPath);
       setImportError(null);
     } catch (error) {
       setImportError(String(error));
     }
+  }
+
+  function rememberRecentConfig(path: string) {
+    setRecentConfigs((current) => [
+      { path },
+      ...current.filter((config) => config.path !== path),
+    ].slice(0, maxRecentConfigs));
   }
 
   function installImport(result: ImportResult) {
@@ -258,13 +320,13 @@ function App() {
     setTestDocuments((current) => {
       const next = { ...current };
       for (const profile of result.profiles) {
-        next[profile.name] ??= { content: exampleTestSet, path: null };
+        next[profile.name] ??= emptyTestDocument;
       }
       return next;
     });
     setTestCounts((current) => {
       const next = { ...current };
-      for (const profile of result.profiles) next[profile.name] ??= 1;
+      for (const profile of result.profiles) next[profile.name] ??= 0;
       return next;
     });
     setSelectedName(result.profiles[0]?.name ?? null);
@@ -274,16 +336,16 @@ function App() {
   function acceptImport() {
     if (!importResult) return;
     installImport(importResult);
+    if (importPath) rememberRecentConfig(importPath);
     setShowImport(false);
     setImportResult(null);
   }
 
-  async function openWorkspaceConfig() {
-    const path = await openDialog({
-      multiple: false,
-      filters: [{ name: "MCP configuration", extensions: ["json"] }],
-    });
-    if (!path) return;
+  async function loadWorkspaceConfig(path: string) {
+    if (!isTauriRuntime()) {
+      reportConnectionError("Config loading requires the MCP Examiner desktop runtime.");
+      return;
+    }
     try {
       const content = await invoke<string>("read_document", { path });
       const result = await invoke<ImportResult>("import_config_preview", {
@@ -293,10 +355,20 @@ function App() {
       setImportContent(content);
       setImportPath(path);
       setImportError(null);
+      rememberRecentConfig(path);
       installImport(result);
     } catch (error) {
       reportConnectionError(error);
     }
+  }
+
+  async function openWorkspaceConfig() {
+    const path = await openDialog({
+      multiple: false,
+      filters: [{ name: "MCP configuration", extensions: ["json"] }],
+    });
+    if (!path) return;
+    await loadWorkspaceConfig(path);
   }
 
   async function saveWorkspaceConfig() {
@@ -312,6 +384,7 @@ function App() {
       });
       setImportContent(content);
       setImportPath(savedPath);
+      rememberRecentConfig(savedPath);
       setConnectionError(null);
     } catch (error) {
       reportConnectionError(error);
@@ -349,12 +422,12 @@ function App() {
       : [...current, profile]);
     if (originalName && originalName !== profile.name) {
       setTestDocuments((current) => {
-        const next = { ...current, [profile.name]: current[originalName] ?? { content: exampleTestSet, path: null } };
+        const next = { ...current, [profile.name]: current[originalName] ?? emptyTestDocument };
         delete next[originalName];
         return next;
       });
       setTestCounts((current) => {
-        const next = { ...current, [profile.name]: current[originalName] ?? 1 };
+        const next = { ...current, [profile.name]: current[originalName] ?? 0 };
         delete next[originalName];
         return next;
       });
@@ -365,8 +438,8 @@ function App() {
         return next;
       });
     } else if (!originalName) {
-      setTestDocuments((current) => ({ ...current, [profile.name]: { content: exampleTestSet, path: null } }));
-      setTestCounts((current) => ({ ...current, [profile.name]: 1 }));
+      setTestDocuments((current) => ({ ...current, [profile.name]: emptyTestDocument }));
+      setTestCounts((current) => ({ ...current, [profile.name]: 0 }));
     }
     setSelectedName(profile.name);
     setActiveTab("overview");
@@ -490,10 +563,22 @@ function App() {
     setConnectingName(profile.name);
     setConnectionError(null);
     try {
-      const snapshot = await invoke<ConnectionSnapshot>("connect_server", {
-        profile,
-        context: { inputs },
-      });
+      let snapshot: ConnectionSnapshot;
+      try {
+        snapshot = await invoke<ConnectionSnapshot>("connect_server", {
+          profile,
+          context: { inputs },
+        });
+      } catch (error) {
+        if (!oauthConfigured(profile) || !String(error).includes("OAuth login required for MCP server")) {
+          throw error;
+        }
+        await loginWithOAuth(profile, inputs);
+        snapshot = await invoke<ConnectionSnapshot>("connect_server", {
+          profile,
+          context: { inputs },
+        });
+      }
       setConnections((current) => ({
         ...current,
         [profile.name]: snapshot,
@@ -505,6 +590,22 @@ function App() {
     } finally {
       setConnectingName(null);
     }
+  }
+
+  async function loginWithOAuth(profile: ServerProfile, inputs: Record<string, string>) {
+    if (!isTauriRuntime()) {
+      throw new Error("OAuth login requires the MCP Examiner desktop runtime.");
+    }
+    setOauthLoginName(profile.name);
+    try {
+      await invoke("oauth_login", { request: { profile, context: { inputs } } });
+    } finally {
+      setOauthLoginName(null);
+    }
+  }
+
+  async function loginSelectedWithOAuth() {
+    await connectSelected();
   }
 
   async function disconnectSelected() {
@@ -546,8 +647,15 @@ function App() {
   }
 
   return (
-    <div className="app-shell">
-      <Titlebar appInfo={appInfo} />
+    <div className="app-shell" data-font-scale={fontScale}>
+      <Titlebar
+        appInfo={appInfo}
+        fontScale={fontScale}
+        recentConfigs={recentConfigs}
+        onFontScaleChange={setFontScale}
+        onSelectConfig={(path) => void loadWorkspaceConfig(path)}
+        onOpenConfig={() => void openWorkspaceConfig()}
+      />
 
       <ServerRail
         profiles={profiles}
@@ -575,9 +683,12 @@ function App() {
               connection={selectedConnection}
               canConnect={isTauriRuntime()}
               connecting={connectingName === selectedProfile.name}
+              oauthConfigured={oauthConfigured(selectedProfile)}
+              oauthLoggingIn={oauthLoginName === selectedProfile.name}
               protocolVersions={appInfo.protocolVersions}
               onEdit={() => setServerEditor({ originalName: selectedProfile.name, draft: profileDraft(selectedProfile) })}
               onProtocolChange={updateProtocol}
+              onOAuthLogin={loginSelectedWithOAuth}
               onConnect={connectSelected}
               onDisconnect={disconnectSelected}
             />
@@ -666,7 +777,11 @@ function App() {
             </section>
           </>
         ) : (
-          <EmptyWorkspace onImport={() => setShowImport(true)} />
+          <EmptyWorkspace
+            recentConfigs={recentConfigs}
+            onSelectConfig={(path) => void loadWorkspaceConfig(path)}
+            onImport={() => setShowImport(true)}
+          />
         )}
       </main>
 

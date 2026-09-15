@@ -1,14 +1,17 @@
 import { Plus, Trash2 } from "lucide-react";
 import { asSchema, emptySchemaValue, schemaType } from "../../lib/schema";
+import { MarkdownText } from "./MarkdownText";
 
 export function SchemaForm({
   schema: schemaInput,
   value,
   onChange,
+  renderMarkdown = false,
 }: {
   schema: unknown;
   value: unknown;
   onChange: (value: unknown) => void;
+  renderMarkdown?: boolean;
 }) {
   const schema = asSchema(schemaInput);
   const type = schemaType(schema);
@@ -30,11 +33,19 @@ export function SchemaForm({
         {Object.entries(schema.properties ?? {}).map(([name, property]) => (
           <label className="schema-field" key={name}>
             <span>{property.title ?? name}{required.has(name) && <b> *</b>}</span>
-            {property.description && <small>{property.description}</small>}
+            {property.description && (
+              <MarkdownText
+                value={property.description}
+                renderMarkdown={renderMarkdown}
+                className="schema-field-description"
+                plainTag="small"
+              />
+            )}
             <SchemaForm
               schema={property}
               value={objectValue[name] ?? emptySchemaValue(property)}
               onChange={(next) => onChange({ ...objectValue, [name]: next })}
+              renderMarkdown={renderMarkdown}
             />
           </label>
         ))}

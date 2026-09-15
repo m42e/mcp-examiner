@@ -7,6 +7,16 @@ import type { TestDocument, TestRunState, TestRunStateUpdate } from "../../lib/r
 import { generateTestDocument, generationItems } from "../../lib/testgen";
 import { GenerationDialog } from "../dialogs/GenerationDialog";
 
+const testSetPlaceholder = `name: Server smoke test
+calls:
+  - type: callTool
+    name: echo
+    arguments:
+      message: hello
+    expect:
+      contains: hello
+`;
+
 export function AutomationPanel({
   profile,
   snapshot,
@@ -249,6 +259,7 @@ export function AutomationPanel({
         <textarea
           aria-label="Test set source"
           value={content}
+          placeholder={testSetPlaceholder}
           onChange={(event) => {
             onDocumentChange({ content: event.currentTarget.value, path: testPath });
             setValidation(null);

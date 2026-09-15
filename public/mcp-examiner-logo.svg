@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">MCP Examiner</title>
+  <desc id="desc">A crisp M monogram with a protocol signal point.</desc>
+  <rect x="2.5" y="2.5" width="59" height="59" rx="13" fill="#FFF8F1" stroke="#D85F43" stroke-width="5"/>
+  <path d="M14 48V16l18 18 18-18v32" fill="none" stroke="#171A16" stroke-linecap="round" stroke-linejoin="round" stroke-width="5.5"/>
+  <circle cx="32" cy="34" r="5" fill="#D85F43" stroke="#171A16" stroke-width="2.5"/>
+  <path d="M23 11h18" fill="none" stroke="#D85F43" stroke-linecap="round" stroke-width="3"/>
+</svg>
