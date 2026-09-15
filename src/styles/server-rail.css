@@ -34,6 +34,70 @@
   cursor: not-allowed;
 }
 
+.rail-save-menu {
+  position: relative;
+  display: flex;
+  gap: 1px;
+}
+
+.rail-save-button {
+  transition: color 140ms ease;
+}
+
+.rail-save-button-dirty,
+.rail-save-button-dirty:hover {
+  color: #efa34c;
+}
+
+.rail-save-button-saved,
+.rail-save-button-saved:hover {
+  color: #65bb8b;
+}
+
+.rail-save-menu-trigger {
+  width: 18px !important;
+  padding: 0;
+}
+
+.rail-save-menu-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  min-width: 132px;
+  padding: 5px;
+  color: #e9ece6;
+  background: #252a24;
+  border: 1px solid #424a40;
+  border-radius: 5px;
+  box-shadow: 0 14px 32px rgba(11, 13, 11, 0.32);
+}
+
+.rail-save-menu-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  color: #e3e8df;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.rail-save-menu-item:hover {
+  background: #31382f;
+  border-color: #465044;
+}
+
+.rail-save-menu-item > svg {
+  color: #f09b83;
+}
+
 .server-search {
   display: flex;
   align-items: center;

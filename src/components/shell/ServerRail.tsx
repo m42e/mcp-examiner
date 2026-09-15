@@ -1,4 +1,5 @@
-import { FileUp, Import, KeyRound, Network, Plus, Save, Search, Server, TerminalSquare } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ChevronDown, FileUp, Import, KeyRound, Network, Plus, Save, Search, Server, TerminalSquare } from "lucide-react";
 import type { ConnectionSnapshot, ServerProfile } from "../../contracts";
 import { transportLabel } from "../../lib/profile";
 
@@ -7,11 +8,13 @@ export type ServerRailProps = {
   filteredProfiles: ServerProfile[];
   selectedName: string | null;
   connections: Record<string, ConnectionSnapshot>;
+  configDirty: boolean;
   query: string;
   onQueryChange: (query: string) => void;
   onSelect: (name: string) => void;
   onOpenConfig: () => void;
-  onSaveConfig: () => void;
+  onSaveConfig: () => Promise<boolean>;
+  onSaveConfigAs: () => Promise<boolean>;
   onAddServer: () => void;
   onPasteConfig: () => void;
   onOpenSecrets: () => void;
@@ -22,22 +25,81 @@ export function ServerRail({
   filteredProfiles,
   selectedName,
   connections,
+  configDirty,
   query,
   onQueryChange,
   onSelect,
   onOpenConfig,
   onSaveConfig,
+  onSaveConfigAs,
   onAddServer,
   onPasteConfig,
   onOpenSecrets,
 }: ServerRailProps) {
+  const [saveMenuOpen, setSaveMenuOpen] = useState(false);
+  const [saveFeedback, setSaveFeedback] = useState(false);
+  const saveMenuRef = useRef<HTMLDivElement>(null);
+  const saveFeedbackTimeoutRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!saveMenuOpen) return;
+    function closeMenu(event: PointerEvent) {
+      if (!saveMenuRef.current?.contains(event.target as Node)) {
+        setSaveMenuOpen(false);
+      }
+    }
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setSaveMenuOpen(false);
+    }
+    document.addEventListener("pointerdown", closeMenu);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeMenu);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [saveMenuOpen]);
+
+  useEffect(() => () => {
+    if (saveFeedbackTimeoutRef.current !== null) {
+      window.clearTimeout(saveFeedbackTimeoutRef.current);
+    }
+  }, []);
+
+  async function runSave(save: () => Promise<boolean>) {
+    if (!(await save())) return;
+    setSaveFeedback(true);
+    if (saveFeedbackTimeoutRef.current !== null) {
+      window.clearTimeout(saveFeedbackTimeoutRef.current);
+    }
+    saveFeedbackTimeoutRef.current = window.setTimeout(() => {
+      setSaveFeedback(false);
+      saveFeedbackTimeoutRef.current = null;
+    }, 1400);
+  }
+
+  const saveButtonClassName = [
+    "icon-button",
+    "icon-button-dark",
+    "rail-save-button",
+    configDirty ? "rail-save-button-dirty" : "",
+    saveFeedback && !configDirty ? "rail-save-button-saved" : "",
+  ].filter(Boolean).join(" ");
+
   return (
     <aside className="server-rail">
       <div className="rail-heading">
         <span>Servers</span>
         <div className="rail-actions">
           <button className="icon-button icon-button-dark" type="button" aria-label="Open MCP configuration" title="Open MCP configuration" onClick={onOpenConfig}><FileUp size={15} /></button>
-          <button className="icon-button icon-button-dark" type="button" aria-label="Save MCP configuration" title="Save MCP configuration" onClick={onSaveConfig} disabled={profiles.length === 0}><Save size={15} /></button>
+          <div className="rail-save-menu" ref={saveMenuRef}>
+            <button className={saveButtonClassName} type="button" aria-label="Save MCP configuration" title={configDirty ? "Save MCP configuration (unsaved changes)" : saveFeedback ? "Configuration saved" : "Save MCP configuration"} onClick={() => { setSaveMenuOpen(false); void runSave(onSaveConfig); }} disabled={profiles.length === 0}><Save size={15} /></button>
+            <button className="icon-button icon-button-dark rail-save-menu-trigger" type="button" aria-label="Save MCP configuration options" title="Save MCP configuration options" aria-expanded={saveMenuOpen} aria-haspopup="menu" onClick={() => setSaveMenuOpen((open) => !open)} disabled={profiles.length === 0}><ChevronDown size={13} /></button>
+            {saveMenuOpen && (
+              <div className="rail-save-menu-panel" role="menu" aria-label="Save configuration">
+                <button className="rail-save-menu-item" type="button" role="menuitem" onClick={() => { setSaveMenuOpen(false); void runSave(onSaveConfigAs); }}><Save size={14} /> Save as...</button>
+              </div>
+            )}
+          </div>
           <button className="icon-button icon-button-dark" type="button" aria-label="Add MCP server" title="Add MCP server" onClick={onAddServer}><Plus size={15} /></button>
           <button className="icon-button icon-button-dark" type="button" aria-label="Paste MCP JSON" title="Paste MCP JSON" onClick={onPasteConfig}><Import size={15} /></button>
         </div>

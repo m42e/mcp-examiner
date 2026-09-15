@@ -370,6 +370,12 @@ test("imports, connects, and exercises manual server primitives", async ({ page 
           const request = args?.request as { path: string; content: string };
           if (request.path.endsWith(".json")) {
             configWriteCount += 1;
+            if (configWriteCount === 1 && request.path !== "/tmp/loaded.mcp.json") {
+              throw new Error("Save should overwrite the opened configuration");
+            }
+            if (configWriteCount === 2 && request.path !== "/tmp/saved.mcp.json") {
+              throw new Error("Save As should use the selected configuration path");
+            }
             if (configWriteCount === 1 && (!request.content.includes('"direct-server"') || !request.content.includes("https://edited.test/mcp") || !request.content.includes("${secret:direct-server-authorization}"))) {
               throw new Error("Persistent config save did not serialize the live server list");
             }
@@ -553,6 +559,18 @@ test("imports, connects, and exercises manual server primitives", async ({ page 
                 name: "Fixture Readme",
                 mimeType: "text/plain",
               },
+              {
+                uri: "ui://fixture/app",
+                name: "Fixture App",
+                title: "Fixture App",
+                mimeType: "text/html;profile=mcp-app",
+                _meta: {
+                  ui: {
+                    csp: { resourceDomains: ["https://cdn.example.test"] },
+                    permissions: { clipboardWrite: {} },
+                  },
+                },
+              },
             ],
             resourceTemplates: [],
             prompts: [
@@ -568,6 +586,18 @@ test("imports, connects, and exercises manual server primitives", async ({ page 
           return { content: [{ type: "text", text: "hello" }], isError: false };
         }
         if (command === "read_resource") {
+          const request = args?.request as { uri?: string } | undefined;
+          if (request?.uri === "ui://fixture/app") {
+            return {
+              contents: [
+                {
+                  uri: "ui://fixture/app",
+                  mimeType: "text/html;profile=mcp-app",
+                  text: "<!doctype html><html><body><h1>Fixture app</h1><script>window.addEventListener(\"message\", event => { if (event.data?.id === 1 && event.data.result?.hostCapabilities && event.data.result?.hostInfo) document.body.dataset.initialized = \"true\"; }); window.parent.postMessage({ jsonrpc: \"2.0\", id: 1, method: \"ui/initialize\", params: { appCapabilities: {} } }, \"*\");</script></body></html>",
+                },
+              ],
+            };
+          }
           return {
             contents: [
               { uri: "fixture://readme", mimeType: "text/plain", text: "Read me" },
@@ -705,7 +735,15 @@ test("imports, connects, and exercises manual server primitives", async ({ page 
   await editDialog.getByLabel("URL", { exact: true }).fill("https://edited.test/mcp");
   await editDialog.getByRole("button", { name: "Save server" }).click();
   await expect(page.getByRole("paragraph").filter({ hasText: "https://edited.test/mcp" })).toBeVisible();
-  await page.getByRole("button", { name: "Save MCP configuration" }).click();
+  const saveConfigButton = page.getByRole("button", { name: "Save MCP configuration", exact: true });
+  await expect(saveConfigButton).toHaveClass(/rail-save-button-dirty/);
+  await saveConfigButton.click();
+  await expect(saveConfigButton).toHaveClass(/rail-save-button-saved/);
+  await expect(saveConfigButton).not.toHaveClass(/rail-save-button-dirty/);
+  await expect(saveConfigButton).not.toHaveClass(/rail-save-button-saved/, { timeout: 2500 });
+  await page.getByRole("button", { name: "Save MCP configuration options" }).click();
+  await page.getByRole("menu", { name: "Save configuration" }).getByRole("menuitem", { name: "Save as..." }).click();
+  await expect(saveConfigButton).toHaveClass(/rail-save-button-saved/);
 
   await page.getByRole("button", { name: "Paste MCP JSON" }).click();
   const importDialog = page.getByRole("dialog", { name: "Import servers" });
@@ -763,7 +801,7 @@ test("imports, connects, and exercises manual server primitives", async ({ page 
   await managedSecrets.getByRole("button", { name: "Close" }).click();
   await expect(page.getByRole("heading", { name: "Echo" })).toBeVisible();
   await expect(page.getByLabel("3 tools")).toBeVisible();
-  await expect(page.getByLabel("1 resources")).toBeVisible();
+  await expect(page.getByLabel("2 resources")).toBeVisible();
   await expect(page.getByLabel("1 prompts")).toBeVisible();
   await expect(page.getByLabel("2 messages")).toBeVisible();
   await expect(page.getByLabel("0 tests")).toBeVisible();
@@ -780,7 +818,7 @@ test("imports, connects, and exercises manual server primitives", async ({ page 
   await page.getByRole("button", { name: "Generate" }).click();
   const generateDialog = page.getByRole("dialog", { name: "Select tests to generate" });
   await expect(generateDialog).toBeVisible();
-  await expect(generateDialog.getByRole("checkbox")).toHaveCount(5);
+  await expect(generateDialog.getByRole("checkbox")).toHaveCount(6);
   for (const checkbox of await generateDialog.getByRole("checkbox").all()) {
     await expect(checkbox).toBeChecked();
   }
@@ -804,7 +842,7 @@ test("imports, connects, and exercises manual server primitives", async ({ page 
   await expect(generatedSource).toHaveValue(/"mode": "fast"/);
   await expect(generatedSource).toHaveValue(/"count": 1/);
   await expect(generatedSource).toHaveValue(/"enabled": true/);
-  await expect(page.getByLabel("4 tests")).toBeVisible();
+  await expect(page.getByLabel("5 tests")).toBeVisible();
   await page.getByRole("button", { name: "Tools" }).click();
 
   const toolButtons = page.locator(".tool-list button");
@@ -922,6 +960,15 @@ test("imports, connects, and exercises manual server primitives", async ({ page 
   await page.getByRole("button", { name: "Resources" }).click();
   await page.getByRole("button", { name: "Read resource" }).click();
   await expect(page.getByText("Read me", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: /Fixture App/ }).click();
+  await page.getByRole("button", { name: "Read resource" }).click();
+  const mcpAppFrame = page.locator('iframe[title="MCP App preview"]');
+  await expect(mcpAppFrame).toHaveAttribute("sandbox", "allow-forms allow-scripts");
+  await expect(mcpAppFrame).toHaveAttribute("allow", "clipboard-write");
+  const mcpAppContent = mcpAppFrame.contentFrame();
+  await expect(mcpAppContent.getByRole("heading", { name: "Fixture app" })).toBeVisible();
+  await expect(mcpAppContent.locator('meta[http-equiv="Content-Security-Policy"]')).toHaveAttribute("content", /cdn\.example\.test/);
+  await expect(mcpAppContent.locator("body")).toHaveAttribute("data-initialized", "true");
 
   await page.getByRole("button", { name: "Prompts" }).click();
   await page.getByLabel("name").fill("Ada");

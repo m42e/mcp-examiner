@@ -147,6 +147,7 @@ function App() {
   const [showImport, setShowImport] = useState(false);
   const [importContent, setImportContent] = useState(exampleConfig);
   const [importPath, setImportPath] = useState<string | null>(null);
+  const [configDirty, setConfigDirty] = useState(false);
   const [importSource, setImportSource] =
     useState<ConfigSourceKind>("auto");
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
@@ -364,6 +365,7 @@ function App() {
   function acceptImport() {
     if (!importResult) return;
     installImport(importResult);
+    setConfigDirty(true);
     if (importPath) rememberRecentConfig(importPath);
     setShowImport(false);
     setImportResult(null);
@@ -385,6 +387,7 @@ function App() {
       setImportError(null);
       rememberRecentConfig(path);
       installImport(result);
+      setConfigDirty(false);
     } catch (error) {
       reportConnectionError(error);
     }
@@ -399,12 +402,14 @@ function App() {
     await loadWorkspaceConfig(path);
   }
 
-  async function saveWorkspaceConfig() {
-    const path = await saveDialog({
-      defaultPath: importPath ?? "mcp.json",
-      filters: [{ name: "MCP configuration", extensions: ["json"] }],
-    });
-    if (!path) return;
+  async function saveWorkspaceConfig(saveAs = false): Promise<boolean> {
+    const path = saveAs || !importPath
+      ? await saveDialog({
+          defaultPath: importPath ?? "mcp.json",
+          filters: [{ name: "MCP configuration", extensions: ["json"] }],
+        })
+      : importPath;
+    if (!path) return false;
     const content = serializeProfiles(profiles);
     try {
       const savedPath = await invoke<string>("write_document", {
@@ -413,9 +418,12 @@ function App() {
       setImportContent(content);
       setImportPath(savedPath);
       rememberRecentConfig(savedPath);
+      setConfigDirty(false);
       setConnectionError(null);
+      return true;
     } catch (error) {
       reportConnectionError(error);
+      return false;
     }
   }
 
@@ -448,6 +456,7 @@ function App() {
     setProfiles((current) => originalName
       ? current.map((candidate) => candidate.name === originalName ? profile : candidate)
       : [...current, profile]);
+    setConfigDirty(true);
     setOauthRequiredNames((current) => {
       const next = { ...current };
       if (originalName) delete next[originalName];
@@ -483,6 +492,7 @@ function App() {
 
   function updateProtocol(value: string) {
     if (!selectedProfile) return;
+    setConfigDirty(true);
     setProfiles((current) =>
       current.map((profile) =>
         profile.name === selectedProfile.name
@@ -752,6 +762,7 @@ function App() {
           filteredProfiles={filteredProfiles}
           selectedName={selectedName}
           connections={connections}
+          configDirty={configDirty}
           query={query}
           onQueryChange={setQuery}
           onSelect={(name) => {
@@ -760,6 +771,7 @@ function App() {
           }}
           onOpenConfig={openWorkspaceConfig}
           onSaveConfig={saveWorkspaceConfig}
+          onSaveConfigAs={() => saveWorkspaceConfig(true)}
           onAddServer={() => setServerEditor({ originalName: null, draft: emptyServerDraft() })}
           onPasteConfig={() => setShowImport(true)}
           onOpenSecrets={openSecrets}

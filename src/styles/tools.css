@@ -591,6 +591,48 @@
   border-color: #e8c0b5;
 }
 
+.mcp-app-preview {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mcp-app-preview-toolbar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #676c63;
+  font-size: 9px;
+}
+
+.mcp-app-preview-toolbar details {
+  min-width: 0;
+}
+
+.mcp-app-preview-toolbar summary {
+  color: var(--teal);
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.mcp-app-preview-toolbar details pre {
+  max-height: 260px;
+  margin-top: 8px;
+}
+
+.mcp-app-preview-frame {
+  display: block;
+  width: 100%;
+  min-height: 360px;
+  resize: vertical;
+  background: #fff;
+  border: 1px solid #d7d9d1;
+  border-radius: 4px;
+}
+
 .primitive-input {
   display: flex;
   flex-direction: column;

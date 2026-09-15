@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Braces, FolderOpen, LoaderCircle } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import type { ResourceSummary, ResourceTemplateSummary } from "../../contracts";
+import { getMcpAppResource, McpAppPreview } from "./McpAppPreview";
 import { ResultViewer } from "../primitives/ResultViewer";
 
 export function ResourcesPanel({
@@ -36,6 +37,9 @@ export function ResourcesPanel({
   const selectedTemplate = templates.find(
     (template) => template.uriTemplate === selectedTarget,
   );
+  const appResource = result === null
+    ? null
+    : getMcpAppResource(result, selectedResource?._meta ?? selectedTemplate?._meta);
 
   async function readResource() {
     if (!uri.trim()) return;
@@ -164,7 +168,17 @@ export function ResourcesPanel({
         {(result !== null || error) && (
           <section className={`tool-result ${error ? "tool-result-error" : ""}`}>
             <span>{error ? "Error" : "Contents"}</span>
-            {error ? <pre>{error}</pre> : <ResultViewer value={result} />}
+            {error ? (
+              <pre>{error}</pre>
+            ) : appResource !== null ? (
+              <McpAppPreview
+                resource={appResource}
+                serverName={serverName}
+                onActivity={onActivity}
+              />
+            ) : (
+              <ResultViewer value={result} />
+            )}
           </section>
         )}
       </section>

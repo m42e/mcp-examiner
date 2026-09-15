@@ -122,6 +122,7 @@ export type ResourceSummary = {
   description?: string;
   mimeType?: string;
   size?: number;
+  _meta?: unknown;
 };
 
 export type ResourceTemplateSummary = {
@@ -130,6 +131,7 @@ export type ResourceTemplateSummary = {
   title?: string;
   description?: string;
   mimeType?: string;
+  _meta?: unknown;
 };
 
 export type PromptArgumentSummary = {

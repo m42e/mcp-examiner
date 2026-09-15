@@ -793,7 +793,16 @@ fn protocol_setup(
 ) -> Result<(ClientInfo, ClientLifecycleMode, Option<ProtocolVersion>), ProtocolError> {
     let identity =
         Implementation::new("mcp-examiner", env!("CARGO_PKG_VERSION")).with_title("MCP Examiner");
-    let capabilities = ClientCapabilities::default();
+    let mut ui_extension = JsonObject::new();
+    ui_extension.insert(
+        "mimeTypes".to_owned(),
+        serde_json::json!(["text/html;profile=mcp-app"]),
+    );
+    let mut capabilities = ClientCapabilities::default();
+    capabilities.extensions = Some(BTreeMap::from([(
+        "io.modelcontextprotocol/ui".to_owned(),
+        ui_extension,
+    )]));
 
     match selection {
         ProtocolSelection::Legacy { version } => {
