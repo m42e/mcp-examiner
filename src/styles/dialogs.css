@@ -79,11 +79,13 @@
 
 .server-dialog {
   width: min(780px, 100%);
+  height: min(840px, calc(100vh - 48px));
   max-height: min(840px, calc(100vh - 48px));
 }
 
 .server-form {
   display: grid;
+  flex: 1 1 auto;
   grid-template-columns: 1fr 1fr;
   gap: 13px 16px;
   min-height: 0;
@@ -274,6 +276,17 @@
   background: #fff;
 }
 
+.secret-section-heading {
+  padding: 9px 16px 6px;
+  color: var(--muted);
+  background: #f2f3ee;
+  border-bottom: 1px solid #e3e5de;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
 .secret-row {
   display: grid;
   grid-template-columns: 22px minmax(0, 1fr) minmax(110px, 0.7fr) auto;
@@ -325,6 +338,53 @@
 
 .secret-value-unavailable {
   color: #a36a16;
+}
+
+.oauth-secret-row > svg {
+  color: var(--accent);
+}
+
+.oauth-secret-status {
+  display: flex;
+  grid-column: 3 / -1;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+  text-align: right;
+}
+
+.oauth-secret-action {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 7px;
+  color: #596157;
+  background: #eef1eb;
+  border: 1px solid #d9ded4;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.oauth-secret-action:hover {
+  color: var(--ink);
+  background: #e5e9e1;
+}
+
+.oauth-secret-action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.oauth-secret-action:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.oauth-secret-action svg {
+  color: #7b8178;
 }
 
 .secret-list-empty {
@@ -438,6 +498,13 @@
   .secret-value {
     grid-column: 2;
     grid-row: 2;
+  }
+
+  .oauth-secret-status {
+    grid-column: 2 / -1;
+    grid-row: 2;
+    justify-content: flex-start;
+    text-align: left;
   }
 
   .secret-row-actions {

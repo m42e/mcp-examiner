@@ -7,8 +7,21 @@
     grid-template-columns: 1fr;
   }
 
-  .activity-section {
-    grid-column: auto;
+  .summary-groups {
+    grid-template-columns: 1fr;
+  }
+
+  .definition-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .summary-group + .summary-group {
+    margin-top: 14px;
+    margin-left: 0;
+    padding-top: 14px;
+    padding-left: 0;
+    border-top: 1px solid #e2e4dd;
+    border-left: 0;
   }
 
   .revision-count,

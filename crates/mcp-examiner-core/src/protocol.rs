@@ -26,9 +26,10 @@ use thiserror::Error;
 use tokio::{process::Command, sync::Mutex, time::timeout};
 
 use crate::{
-    HttpObservation, OAuthCredentialStore, ObservableHttpClient, PUBLISHED_PROTOCOL_VERSIONS,
-    ProtocolSelection, Redactor, ResolutionContext, ResolutionError, ServerProfile,
-    TransportConfig, TransportRecorder, oauth::authorization_manager, resolve_profile,
+    HttpObservation, OAuthCredentialStore, OAuthSnapshot, ObservableHttpClient,
+    PUBLISHED_PROTOCOL_VERSIONS, ProtocolSelection, Redactor, ResolutionContext, ResolutionError,
+    ServerProfile, TransportConfig, TransportRecorder, oauth::authorization_manager,
+    oauth::authorization_snapshot, resolve_profile,
 };
 
 type LiveSession = RunningService<RoleClient, ClientInfo>;
@@ -112,6 +113,7 @@ impl TryFrom<Tool> for ToolSummary {
 pub struct ConnectionSnapshot {
     pub server_name: String,
     pub protocol_version: String,
+    pub authorization: Option<OAuthSnapshot>,
     pub server_info: Option<Value>,
     pub capabilities: Value,
     pub instructions: Option<String>,
@@ -182,6 +184,7 @@ struct SessionState {
     sessions: HashMap<String, ManagedSession>,
     histories: HashMap<String, Vec<ProtocolEvent>>,
     transport_histories: HashMap<String, Vec<HttpObservation>>,
+    pending_transport_recorders: HashMap<String, TransportRecorder>,
 }
 
 #[derive(Default)]
@@ -256,16 +259,32 @@ impl SessionManager {
             }
             TransportConfig::Http { url, headers, .. }
             | TransportConfig::Auto { url, headers, .. } => {
-                let recorder = TransportRecorder::new(redactor.clone());
+                let recorder = self
+                    .take_pending_transport_recorder(&profile.name)
+                    .await
+                    .unwrap_or_else(|| TransportRecorder::new(redactor.clone()));
                 let config = StreamableHttpClientTransportConfig::with_uri(url.clone())
                     .custom_headers(parse_headers(headers)?);
-                let mut oauth_manager =
-                    authorization_manager(&profile, oauth_store.clone()).await?;
+                let mut oauth_manager = match authorization_manager(
+                    &profile,
+                    oauth_store.clone(),
+                    Some(recorder.clone()),
+                )
+                .await
+                {
+                    Ok(manager) => manager,
+                    Err(error) => {
+                        self.retain_pending_transport_recorder(&profile.name, recorder.clone())
+                            .await;
+                        return Err(error);
+                    }
+                };
                 if let Some(manager) = oauth_manager.as_mut() {
-                    manager
-                        .initialize_from_store()
-                        .await
-                        .map_err(|error| ProtocolError::OAuth(error.to_string()))?;
+                    if let Err(error) = manager.initialize_from_store().await {
+                        self.retain_pending_transport_recorder(&profile.name, recorder.clone())
+                            .await;
+                        return Err(ProtocolError::OAuth(error.to_string()));
+                    }
                 }
                 let connection = match oauth_manager {
                     Some(manager) => {
@@ -297,6 +316,8 @@ impl SessionManager {
                         if matches!(profile.protocol, ProtocolSelection::Auto { .. }) =>
                     {
                         if matches!(discover_error, ProtocolError::OAuthAuthorizationRequired) {
+                            self.retain_pending_transport_recorder(&profile.name, recorder.clone())
+                                .await;
                             return Err(ProtocolError::OAuthAuthorizationRequired);
                         }
                         let ProtocolSelection::Auto { legacy_version } = &profile.protocol else {
@@ -308,13 +329,32 @@ impl SessionManager {
                         let (client_info, lifecycle, _) = protocol_setup(&fallback_selection)?;
                         let config = StreamableHttpClientTransportConfig::with_uri(url.clone())
                             .custom_headers(parse_headers(headers)?);
-                        let mut oauth_manager =
-                            authorization_manager(&profile, oauth_store.clone()).await?;
+                        let mut oauth_manager = match authorization_manager(
+                            &profile,
+                            oauth_store.clone(),
+                            Some(recorder.clone()),
+                        )
+                        .await
+                        {
+                            Ok(manager) => manager,
+                            Err(error) => {
+                                self.retain_pending_transport_recorder(
+                                    &profile.name,
+                                    recorder.clone(),
+                                )
+                                .await;
+                                return Err(error);
+                            }
+                        };
                         if let Some(manager) = oauth_manager.as_mut() {
-                            manager
-                                .initialize_from_store()
-                                .await
-                                .map_err(|error| ProtocolError::OAuth(error.to_string()))?;
+                            if let Err(error) = manager.initialize_from_store().await {
+                                self.retain_pending_transport_recorder(
+                                    &profile.name,
+                                    recorder.clone(),
+                                )
+                                .await;
+                                return Err(ProtocolError::OAuth(error.to_string()));
+                            }
                         }
                         let connection = match oauth_manager {
                             Some(manager) => {
@@ -346,9 +386,19 @@ impl SessionManager {
                         match connection {
                             Ok(session) => session,
                             Err(ProtocolError::OAuthAuthorizationRequired) => {
+                                self.retain_pending_transport_recorder(
+                                    &profile.name,
+                                    recorder.clone(),
+                                )
+                                .await;
                                 return Err(ProtocolError::OAuthAuthorizationRequired);
                             }
                             Err(legacy_error) => {
+                                self.retain_pending_transport_recorder(
+                                    &profile.name,
+                                    recorder.clone(),
+                                )
+                                .await;
                                 return Err(ProtocolError::AutoFallback {
                                     discover: discover_error.to_string(),
                                     legacy: legacy_error.to_string(),
@@ -356,7 +406,11 @@ impl SessionManager {
                             }
                         }
                     }
-                    Err(error) => return Err(error),
+                    Err(error) => {
+                        self.retain_pending_transport_recorder(&profile.name, recorder.clone())
+                            .await;
+                        return Err(error);
+                    }
                 };
                 (session, Some(recorder))
             }
@@ -365,6 +419,25 @@ impl SessionManager {
                     transport_name(other).to_owned(),
                 ));
             }
+        };
+
+        let authorization = if oauth_configured(&profile) {
+            authorization_snapshot(&profile, oauth_store.clone(), transport_recorder.clone())
+                .await
+                .ok()
+                .flatten()
+        } else if let Some(store) = oauth_store.as_ref() {
+            let has_stored_credentials = store.load().await.ok().flatten().is_some();
+            if has_stored_credentials {
+                authorization_snapshot(&profile, oauth_store.clone(), transport_recorder.clone())
+                    .await
+                    .ok()
+                    .flatten()
+            } else {
+                None
+            }
+        } else {
+            None
         };
 
         session
@@ -447,6 +520,7 @@ impl SessionManager {
         let snapshot = ConnectionSnapshot {
             server_name: profile.name.clone(),
             protocol_version: peer_info.protocol_version.to_string(),
+            authorization,
             server_info: peer_info
                 .server_info
                 .as_ref()
@@ -636,8 +710,50 @@ impl SessionManager {
             .get(server_name)
             .and_then(|session| session.transport_recorder.as_ref())
             .map(TransportRecorder::observations)
+            .or_else(|| {
+                state
+                    .pending_transport_recorders
+                    .get(server_name)
+                    .map(TransportRecorder::observations)
+            })
             .or_else(|| state.transport_histories.get(server_name).cloned())
             .unwrap_or_default()
+    }
+
+    pub async fn oauth_transport_recorder(
+        &self,
+        server_name: &str,
+        redactor: Redactor,
+    ) -> TransportRecorder {
+        let mut state = self.state.lock().await;
+        state
+            .pending_transport_recorders
+            .entry(server_name.to_owned())
+            .or_insert_with(|| TransportRecorder::new(redactor))
+            .clone()
+    }
+
+    async fn take_pending_transport_recorder(
+        &self,
+        server_name: &str,
+    ) -> Option<TransportRecorder> {
+        self.state
+            .lock()
+            .await
+            .pending_transport_recorders
+            .remove(server_name)
+    }
+
+    async fn retain_pending_transport_recorder(
+        &self,
+        server_name: &str,
+        recorder: TransportRecorder,
+    ) {
+        self.state
+            .lock()
+            .await
+            .pending_transport_recorders
+            .insert(server_name.to_owned(), recorder);
     }
 }
 
@@ -800,6 +916,15 @@ fn transport_name(transport: &TransportConfig) -> &'static str {
         TransportConfig::Auto { .. } => "auto",
         TransportConfig::Websocket { .. } => "websocket",
     }
+}
+
+fn oauth_configured(profile: &ServerProfile) -> bool {
+    matches!(
+        &profile.transport,
+        TransportConfig::Http { oauth: Some(_), .. }
+            | TransportConfig::Sse { oauth: Some(_), .. }
+            | TransportConfig::Auto { oauth: Some(_), .. }
+    )
 }
 
 #[cfg(test)]

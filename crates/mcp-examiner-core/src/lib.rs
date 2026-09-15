@@ -12,7 +12,10 @@ pub mod transport;
 pub use config::{ConfigImportError, import_config};
 pub use model::*;
 pub use oauth::{
-    OAuthAuthorization, OAuthCredentialStore, OAuthCredentials, start_oauth_authorization,
+    OAuthAuthorization, OAuthCredentialStore, OAuthCredentials, OAuthDiscoverySource,
+    OAuthRegistrationMethod, OAuthRegistrationPreference, OAuthSnapshot, start_oauth_authorization,
+    start_oauth_authorization_with_recorder,
+    start_oauth_authorization_with_recorder_and_preference,
 };
 pub use protocol::{
     ConnectionSnapshot, ProtocolError, ProtocolEvent, ProtocolEventDirection, SessionManager,

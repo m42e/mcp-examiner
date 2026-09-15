@@ -1,11 +1,19 @@
-use std::{sync::Arc, time::Duration};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
-use mcp_examiner_core::{ServerProfile, start_oauth_authorization};
+use mcp_examiner_core::{
+    OAuthRegistrationPreference, ServerProfile, TransportRecorder,
+    start_oauth_authorization_with_recorder_and_preference,
+};
 use tauri::AppHandle;
 use tauri_plugin_opener::OpenerExt;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpListener,
+    sync::watch,
     time::timeout,
 };
 
@@ -15,7 +23,55 @@ const CALLBACK_PATH: &str = "/oauth/callback";
 const CALLBACK_TIMEOUT: Duration = Duration::from_secs(300);
 const MAX_CALLBACK_REQUEST_BYTES: usize = 16 * 1024;
 
-pub async fn login(app: AppHandle, profile: ServerProfile) -> Result<(), String> {
+#[derive(Default)]
+pub struct OAuthLoginState {
+    cancellations: Mutex<HashMap<String, watch::Sender<bool>>>,
+}
+
+impl OAuthLoginState {
+    pub fn begin(&self, server_name: &str) -> Result<watch::Receiver<bool>, String> {
+        let mut cancellations = self
+            .cancellations
+            .lock()
+            .map_err(|_| "Could not access OAuth login state.".to_owned())?;
+        if cancellations.contains_key(server_name) {
+            return Err("OAuth login is already in progress for this server.".to_owned());
+        }
+        let (sender, receiver) = watch::channel(false);
+        cancellations.insert(server_name.to_owned(), sender);
+        Ok(receiver)
+    }
+
+    pub fn cancel(&self, server_name: &str) -> Result<(), String> {
+        let cancellations = self
+            .cancellations
+            .lock()
+            .map_err(|_| "Could not access OAuth login state.".to_owned())?;
+        let Some(sender) = cancellations.get(server_name) else {
+            return Err("No OAuth login is in progress for this server.".to_owned());
+        };
+        sender
+            .send(true)
+            .map_err(|_| "OAuth login is no longer active.".to_owned())
+    }
+
+    pub fn finish(&self, server_name: &str) -> Result<(), String> {
+        let mut cancellations = self
+            .cancellations
+            .lock()
+            .map_err(|_| "Could not access OAuth login state.".to_owned())?;
+        cancellations.remove(server_name);
+        Ok(())
+    }
+}
+
+pub async fn login(
+    app: AppHandle,
+    profile: ServerProfile,
+    recorder: TransportRecorder,
+    mut cancellation: watch::Receiver<bool>,
+    use_dynamic_registration: bool,
+) -> Result<(), String> {
     let callback_port = configured_callback_port(&profile)?;
     let listener = TcpListener::bind(("127.0.0.1", callback_port.unwrap_or(0)))
         .await
@@ -26,21 +82,51 @@ pub async fn login(app: AppHandle, profile: ServerProfile) -> Result<(), String>
         .port();
     let redirect_uri = format!("http://127.0.0.1:{port}{CALLBACK_PATH}");
     let store = Arc::new(secrets::oauth_store(&profile)?);
-    let authorization = start_oauth_authorization(&profile, redirect_uri, store)
-        .await
-        .map_err(|error| error.to_string())?;
+    let preference = if use_dynamic_registration {
+        OAuthRegistrationPreference::DynamicClientRegistration
+    } else {
+        OAuthRegistrationPreference::Automatic
+    };
+    let authorization = tokio::select! {
+        result = start_oauth_authorization_with_recorder_and_preference(
+            &profile,
+            redirect_uri,
+            store,
+            Some(recorder.clone()),
+            preference,
+        ) => {
+            result.map_err(|error| error.to_string())?
+        }
+        _ = wait_for_cancellation(&mut cancellation) => {
+            return Err("OAuth login cancelled.".to_owned());
+        }
+    };
 
     app.opener()
         .open_url(authorization.authorization_url().to_owned(), None::<String>)
         .map_err(|error| format!("Could not open the OAuth authorization page: {error}"))?;
 
-    let callback_url = timeout(CALLBACK_TIMEOUT, wait_for_callback(listener))
-        .await
-        .map_err(|_| "OAuth login timed out waiting for the browser callback.".to_owned())??;
+    let callback_url = tokio::select! {
+        result = timeout(CALLBACK_TIMEOUT, wait_for_callback(listener, recorder.clone())) => {
+            result
+                .map_err(|_| "OAuth login timed out waiting for the browser callback.".to_owned())??
+        }
+        _ = wait_for_cancellation(&mut cancellation) => {
+            return Err("OAuth login cancelled.".to_owned());
+        }
+    };
     authorization
         .complete(&callback_url)
         .await
         .map_err(|error| error.to_string())
+}
+
+async fn wait_for_cancellation(cancellation: &mut watch::Receiver<bool>) {
+    while !*cancellation.borrow() {
+        if cancellation.changed().await.is_err() {
+            return;
+        }
+    }
 }
 
 fn configured_callback_port(profile: &ServerProfile) -> Result<Option<u16>, String> {
@@ -54,7 +140,10 @@ fn configured_callback_port(profile: &ServerProfile) -> Result<Option<u16>, Stri
     }
 }
 
-async fn wait_for_callback(listener: TcpListener) -> Result<String, String> {
+async fn wait_for_callback(
+    listener: TcpListener,
+    recorder: TransportRecorder,
+) -> Result<String, String> {
     loop {
         let (mut stream, peer) = listener
             .accept()
@@ -94,6 +183,7 @@ async fn wait_for_callback(listener: TcpListener) -> Result<String, String> {
             "OAuth login completed. You can close this window."
         };
         write_response(&mut stream, "200 OK", message).await?;
+        recorder.record_callback(&format!("http://127.0.0.1{target}"), has_error);
         return Ok(format!("http://127.0.0.1{target}"));
     }
 }

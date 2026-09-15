@@ -60,6 +60,41 @@ test("keeps primary controls inside a narrow viewport", async ({ page }) => {
   await page.screenshot({ path: "test-results/workbench-narrow.png" });
 });
 
+test("keeps the server editor scrollable and confirms abandoning changes", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("mcp-examiner.font-scale", "1.3"));
+  await page.setViewportSize({ width: 1200, height: 620 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Add MCP server" }).click();
+
+  const serverDialog = page.getByRole("dialog", { name: "Add MCP server" });
+  await expect(serverDialog).toBeVisible();
+  await expect(serverDialog.getByRole("button", { name: "Save server" })).toBeVisible();
+
+  const dialogBox = await serverDialog.boundingBox();
+  if (!dialogBox) throw new Error("Server dialog did not have a layout box");
+  expect(dialogBox.y).toBeGreaterThanOrEqual(0);
+  expect(dialogBox.y + dialogBox.height).toBeLessThanOrEqual(620);
+
+  const formMetrics = await serverDialog.locator(".server-form").evaluate((element) => ({
+    clientHeight: element.clientHeight,
+    scrollHeight: element.scrollHeight,
+  }));
+  expect(formMetrics.scrollHeight).toBeGreaterThan(formMetrics.clientHeight);
+
+  await serverDialog.getByLabel("Name").fill("unfinished-server");
+  page.once("dialog", (dialog) => {
+    expect(dialog.type()).toBe("confirm");
+    expect(dialog.message()).toContain("Discard unsaved server changes");
+    void dialog.dismiss();
+  });
+  await serverDialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(serverDialog).toBeVisible();
+
+  page.once("dialog", (dialog) => void dialog.accept());
+  await page.keyboard.press("Escape");
+  await expect(serverDialog).toHaveCount(0);
+});
+
 test("offers OAuth login only after the MCP server requires authorization", async ({ page }) => {
   await page.addInitScript(() => {
     const runtime = window as typeof window & {
@@ -69,7 +104,9 @@ test("offers OAuth login only after the MCP server requires authorization", asyn
         unregisterCallback: (id: number) => void;
         runCallback: (id: number, payload: unknown) => void;
       };
+      __cancelOAuthLogin?: () => void;
     };
+    let httpObservationReads = 0;
     runtime.__TAURI_INTERNALS__ = {
       invoke: async (command) => {
         if (command === "app_info") {
@@ -81,6 +118,47 @@ test("offers OAuth login only after the MCP server requires authorization", asyn
           };
         }
         if (command === "list_secrets") return [];
+        if (command === "list_oauth_credentials") return [];
+        if (command === "http_observations") {
+          httpObservationReads += 1;
+          if (httpObservationReads === 1) return [];
+          return [
+            {
+              sequence: 1,
+              elapsedMs: 12,
+              method: "POST",
+              url: "https://mcp.atlassian.com/v1/mcp/authv2",
+              responseKind: "error",
+              responseBody: null,
+            },
+            {
+              sequence: 2,
+              elapsedMs: 164,
+              method: "GET",
+              url: "https://mcp.atlassian.com/.well-known/oauth-protected-resource/v1/mcp/authv2",
+              responseKind: "oauth 200 OK",
+              responseBody: {
+                resource: "https://mcp.atlassian.com/v1/mcp/authv2",
+                authorization_servers: ["https://auth.atlassian.com/tenant"],
+                scopes_supported: ["read:me", "offline_access"],
+              },
+            },
+            {
+              sequence: 3,
+              elapsedMs: 246,
+              method: "GET",
+              url: "https://auth.atlassian.com/.well-known/oauth-authorization-server/tenant",
+              responseKind: "oauth 200 OK",
+              responseBody: {
+                issuer: "https://auth.atlassian.com/tenant",
+                authorization_endpoint: "https://auth.atlassian.com/authorize",
+                token_endpoint: "https://auth.atlassian.com/oauth/token",
+                registration_endpoint: "https://auth.atlassian.com/tenant/register",
+                client_id_metadata_document_supported: true,
+              },
+            },
+          ];
+        }
         if (command === "import_config_preview") {
           return {
             formatVersion: 1,
@@ -95,7 +173,14 @@ test("offers OAuth login only after the MCP server requires authorization", asyn
                   type: "http",
                   url: "https://example.test/mcp",
                   headers: {},
-                  oauth: null,
+                  oauth: {
+                    clientId: null,
+                    clientMetadataUrl: "https://example.test/client-metadata.json",
+                    callbackPort: null,
+                    scopes: null,
+                    authServerMetadataUrl: null,
+                    enterpriseManaged: false,
+                  },
                 },
                 protocol: { mode: "auto", legacyVersion: null },
                 source: { kind: "generic", path: null, scope: null },
@@ -109,7 +194,14 @@ test("offers OAuth login only after the MCP server requires authorization", asyn
           throw new Error("OAuth login required for MCP server");
         }
         if (command === "oauth_login") {
-          throw new Error("OAuth login was cancelled");
+          await new Promise<void>((_, reject) => {
+            runtime.__cancelOAuthLogin = () => reject(new Error("OAuth login cancelled."));
+          });
+        }
+        if (command === "oauth_cancel") {
+          runtime.__cancelOAuthLogin?.();
+          runtime.__cancelOAuthLogin = undefined;
+          return null;
         }
         throw new Error(`Unexpected command: ${command}`);
       },
@@ -127,9 +219,20 @@ test("offers OAuth login only after the MCP server requires authorization", asyn
 
   await expect(page.getByRole("heading", { name: "public-http-server" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Log in" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "OAuth discovery" })).toBeVisible();
 
   await page.getByRole("button", { name: "Connect", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Log in" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Cancel login" })).toBeVisible();
+  await page.getByRole("button", { name: "Cancel login" }).click();
+  await expect(page.getByRole("button", { name: "Retry with DCR" })).toBeVisible();
+  await expect(page.locator(".authorization-summary")).toContainText("Protected resource metadata");
+  await expect(page.locator(".authorization-summary")).toContainText("https://auth.atlassian.com/tenant");
+  await expect(page.locator(".authorization-summary")).toContainText("read:me offline_access");
+
+  await page.getByRole("button", { name: "Retry with DCR" }).click();
+  await expect(page.getByRole("button", { name: "Cancel login" })).toBeVisible();
+  await page.getByRole("button", { name: "Cancel login" }).click();
+  await expect(page.getByRole("button", { name: "Retry with DCR" })).toBeVisible();
 });
 
 test("loads a recent config from the empty workspace and titlebar menu", async ({ page }) => {
@@ -157,6 +260,7 @@ test("loads a recent config from the empty workspace and titlebar menu", async (
           };
         }
         if (command === "list_secrets") return [];
+        if (command === "list_oauth_credentials") return [];
         if (command === "read_document") return '{"mcpServers":{"recent-server":{"command":"node"}}}';
         if (command === "import_config_preview") {
           return {
@@ -228,6 +332,8 @@ test("imports, connects, and exercises manual server primitives", async ({ page 
     let configWriteCount = 0;
     let failNextConnection = false;
     let nextCallbackId = 1;
+    let oauthTokenStored = true;
+    let dynamicClientRegistered = true;
     const storedSecrets = new Map<string, { label: string; value: string }>();
     const callbacks = new Map<number, (payload: unknown) => void>();
     (window as typeof window & { failNextConnection: () => void }).failNextConnection = () => {
@@ -292,6 +398,16 @@ test("imports, connects, and exercises manual server primitives", async ({ page 
             available: true,
           }));
         }
+        if (command === "list_oauth_credentials") {
+          if (!oauthTokenStored && !dynamicClientRegistered) return [];
+          return [{
+            id: "oauth-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            serverName: "fixture-oauth",
+            endpoint: "https://auth.example.test/mcp",
+            tokenStored: oauthTokenStored,
+            dynamicClientRegistered,
+          }];
+        }
         if (command === "set_secret") {
           const request = args?.request as { id: string; label: string; value: string };
           storedSecrets.set(request.id, { label: request.label, value: request.value });
@@ -309,6 +425,15 @@ test("imports, connects, and exercises manual server primitives", async ({ page 
         }
         if (command === "delete_secret") {
           storedSecrets.delete(args?.id as string);
+          return null;
+        }
+        if (command === "delete_oauth_token") {
+          oauthTokenStored = false;
+          return null;
+        }
+        if (command === "delete_dynamic_client") {
+          oauthTokenStored = false;
+          dynamicClientRegistered = false;
           return null;
         }
         if (command === "import_config_preview") {
@@ -358,6 +483,14 @@ test("imports, connects, and exercises manual server primitives", async ({ page 
           return {
             serverName: "fixture",
             protocolVersion: "2025-11-25",
+            authorization: {
+              discoverySource: "protectedResourceMetadata",
+              authorizationServer: "https://auth.example.test",
+              registrationMethod: "clientIdMetadataDocument",
+              clientIdMetadataDocumentSupported: true,
+              dynamicClientRegistrationSupported: true,
+              scopesSupported: ["mcp:read"],
+            },
             serverInfo: { name: "fixture", version: "1.0.0" },
             capabilities: { tools: {}, resources: {}, prompts: {} },
             instructions: null,
@@ -536,6 +669,7 @@ test("imports, connects, and exercises manual server primitives", async ({ page 
               url: "https://example.test/mcp",
               requestHeaders: { authorization: "[REDACTED]" },
               requestBody: { method: "tools/call" },
+              responseHeaders: { "content-type": "application/json", "mcp-session-id": "fixture-session" },
               responseKind: "json",
               responseBody: { jsonrpc: "2.0", result: { content: [{ text: "hello" }] } },
               sessionId: "fixture-session",
@@ -596,6 +730,17 @@ test("imports, connects, and exercises manual server primitives", async ({ page 
   const secretsDialog = page.getByRole("dialog", { name: "Managed secrets" });
   await expect(secretsDialog.locator(".secret-row").filter({ hasText: "api-token" })).toBeVisible();
   await expect(secretsDialog.getByText("********", { exact: true }).first()).toBeVisible();
+  const oauthRow = secretsDialog.locator(".oauth-secret-row").filter({ hasText: "fixture-oauth" });
+  await expect(oauthRow).toContainText("OAuth token stored");
+  await expect(oauthRow).toContainText("Dynamic client registered");
+  await expect(oauthRow).not.toContainText("oauth-token-value");
+  page.once("dialog", (dialog) => void dialog.accept());
+  await oauthRow.getByRole("button", { name: "Delete OAuth token for fixture-oauth" }).click();
+  await expect(oauthRow).not.toContainText("OAuth token stored");
+  await expect(oauthRow).toContainText("Dynamic client registered");
+  page.once("dialog", (dialog) => void dialog.accept());
+  await oauthRow.getByRole("button", { name: "Delete dynamic client for fixture-oauth" }).click();
+  await expect(oauthRow).toHaveCount(0);
   await secretsDialog.getByRole("button", { name: "Close" }).click();
   await page.getByRole("button", { name: "Manage secrets" }).click();
   const managedSecrets = page.getByRole("dialog", { name: "Managed secrets" });
@@ -622,6 +767,14 @@ test("imports, connects, and exercises manual server primitives", async ({ page 
   await expect(page.getByLabel("1 prompts")).toBeVisible();
   await expect(page.getByLabel("2 messages")).toBeVisible();
   await expect(page.getByLabel("0 tests")).toBeVisible();
+  await page.getByRole("button", { name: "Overview" }).click();
+  await expect(page.getByRole("heading", { name: "Server identity" })).toBeVisible();
+  await expect(page.locator(".server-summary")).toContainText("fixture");
+  await expect(page.locator(".server-summary")).toContainText("1.0.0");
+  await expect(page.locator(".server-summary")).toContainText("2025-11-25");
+  await expect(page.getByRole("heading", { name: "OAuth discovery" })).toBeVisible();
+  await expect(page.locator(".authorization-summary")).toContainText("Client ID Metadata Document");
+  await expect(page.locator(".authorization-summary")).toContainText("auth.example.test");
 
   await page.getByRole("button", { name: "Tests" }).click();
   await page.getByRole("button", { name: "Generate" }).click();
@@ -782,7 +935,15 @@ test("imports, connects, and exercises manual server primitives", async ({ page 
   await page.getByRole("button", { name: "Network" }).click();
   const networkObservation = page.locator(".protocol-events details").first();
   await expect(networkObservation).toContainText("json / https://example.test/mcp");
-  await networkObservation.locator("summary").click();
+  await networkObservation.locator(":scope > summary").click();
+  const requestHeaders = networkObservation.locator(".network-headers");
+  await expect(requestHeaders).toHaveCount(2);
+  await expect(requestHeaders.nth(0)).not.toHaveAttribute("open");
+  await expect(requestHeaders.nth(1)).not.toHaveAttribute("open");
+  await requestHeaders.nth(0).locator("summary").click();
+  await expect(requestHeaders.nth(0)).toContainText(/"authorization": "\[REDACTED\]"/);
+  await requestHeaders.nth(1).locator("summary").click();
+  await expect(requestHeaders.nth(1)).toContainText(/"content-type": "application\/json"/);
   await expect(networkObservation.getByRole("heading", { name: "Response" })).toBeVisible();
   await expect(networkObservation.getByText(/\"text\": \"hello\"/)).toBeVisible();
 

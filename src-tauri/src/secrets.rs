@@ -7,7 +7,9 @@ use std::{
 
 use async_trait::async_trait;
 use keyring::Entry;
-use mcp_examiner_core::{OAuthCredentialStore, OAuthCredentials, ResolutionContext, ServerProfile};
+use mcp_examiner_core::{
+    OAuthConfig, OAuthCredentialStore, OAuthCredentials, ResolutionContext, ServerProfile,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -26,6 +28,16 @@ pub struct SecretSummary {
     pub available: bool,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OAuthCredentialSummary {
+    pub id: String,
+    pub server_name: String,
+    pub endpoint: String,
+    pub token_stored: bool,
+    pub dynamic_client_registered: bool,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SetSecretRequest {
@@ -35,17 +47,7 @@ pub struct SetSecretRequest {
 }
 
 pub(crate) fn oauth_store(profile: &ServerProfile) -> Result<OAuthKeychainStore, String> {
-    let (endpoint, oauth) = match &profile.transport {
-        mcp_examiner_core::TransportConfig::Http { url, oauth, .. }
-        | mcp_examiner_core::TransportConfig::Sse { url, oauth, .. }
-        | mcp_examiner_core::TransportConfig::Auto { url, oauth, .. } => {
-            (url, oauth.clone().unwrap_or_default())
-        }
-        mcp_examiner_core::TransportConfig::Stdio { .. }
-        | mcp_examiner_core::TransportConfig::Websocket { .. } => {
-            return Err("OAuth credentials require an HTTP MCP server.".to_owned());
-        }
-    };
+    let (endpoint, oauth) = oauth_profile(profile)?;
     let mut digest = Sha256::new();
     digest.update(profile.name.as_bytes());
     digest.update([0]);
@@ -62,6 +64,20 @@ pub(crate) fn oauth_store(profile: &ServerProfile) -> Result<OAuthKeychainStore,
     })
 }
 
+fn oauth_profile(profile: &ServerProfile) -> Result<(&str, OAuthConfig), String> {
+    match &profile.transport {
+        mcp_examiner_core::TransportConfig::Http { url, oauth, .. }
+        | mcp_examiner_core::TransportConfig::Sse { url, oauth, .. }
+        | mcp_examiner_core::TransportConfig::Auto { url, oauth, .. } => {
+            Ok((url, oauth.clone().unwrap_or_default()))
+        }
+        mcp_examiner_core::TransportConfig::Stdio { .. }
+        | mcp_examiner_core::TransportConfig::Websocket { .. } => {
+            Err("OAuth credentials require an HTTP MCP server.".to_owned())
+        }
+    }
+}
+
 pub(crate) struct OAuthKeychainStore {
     server_name: String,
 }
@@ -69,6 +85,18 @@ pub(crate) struct OAuthKeychainStore {
 impl OAuthKeychainStore {
     fn entry(&self) -> Result<Entry, String> {
         Entry::new(OAUTH_KEYCHAIN_SERVICE, &self.server_name).map_err(|error| error.to_string())
+    }
+
+    fn from_id(id: &str) -> Result<Self, String> {
+        let Some(hash) = id.strip_prefix("oauth-") else {
+            return Err("Invalid OAuth credential ID.".to_owned());
+        };
+        if hash.len() != 64 || !hash.chars().all(|character| character.is_ascii_hexdigit()) {
+            return Err("Invalid OAuth credential ID.".to_owned());
+        }
+        Ok(Self {
+            server_name: id.to_owned(),
+        })
     }
 }
 
@@ -121,6 +149,59 @@ pub fn list(app: &AppHandle) -> Result<Vec<SecretSummary>, String> {
         .collect::<Vec<_>>();
     summaries.sort_by_key(|summary| summary.label.to_lowercase());
     Ok(summaries)
+}
+
+pub async fn list_oauth_credentials(
+    profiles: &[ServerProfile],
+) -> Result<Vec<OAuthCredentialSummary>, String> {
+    let mut summaries = Vec::new();
+    for profile in profiles {
+        let Ok((endpoint, oauth)) = oauth_profile(profile) else {
+            continue;
+        };
+        let store = oauth_store(profile)?;
+        let Some(credentials) = store.load().await? else {
+            continue;
+        };
+        let token_stored = credentials.token_response.is_some();
+        let dynamic_client_registered = dynamic_client_registered(&oauth, &credentials.client_id);
+        if !token_stored && !dynamic_client_registered {
+            continue;
+        }
+        summaries.push(OAuthCredentialSummary {
+            id: store.server_name.clone(),
+            server_name: profile.name.clone(),
+            endpoint: endpoint.to_owned(),
+            token_stored,
+            dynamic_client_registered,
+        });
+    }
+    summaries.sort_by_key(|summary| summary.server_name.to_lowercase());
+    Ok(summaries)
+}
+
+pub async fn delete_oauth_token(id: &str) -> Result<(), String> {
+    let store = OAuthKeychainStore::from_id(id)?;
+    let Some(credentials) = store.load().await? else {
+        return Ok(());
+    };
+    if credentials.token_response.is_none() {
+        return Ok(());
+    }
+    store
+        .save(
+            OAuthCredentials::new(credentials.client_id, None, Vec::new(), None)
+                .with_issuer(credentials.issuer),
+        )
+        .await
+}
+
+pub async fn delete_dynamic_client(id: &str) -> Result<(), String> {
+    let store = OAuthKeychainStore::from_id(id)?;
+    match store.entry()?.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(error) => Err(format!("Could not clear OAuth credentials: {error}")),
+    }
 }
 
 pub fn set(app: &AppHandle, request: SetSecretRequest) -> Result<SecretSummary, String> {
@@ -247,6 +328,25 @@ fn validate_label(label: &str, id: &str) -> Result<String, String> {
         return Err("Secret labels must be 200 characters or fewer.".to_owned());
     }
     Ok(label.to_owned())
+}
+
+fn dynamic_client_registered(oauth: &OAuthConfig, client_id: &str) -> bool {
+    let client_id = client_id.trim();
+    if client_id.is_empty()
+        || oauth
+            .client_id
+            .as_deref()
+            .is_some_and(|value| !value.trim().is_empty())
+    {
+        return false;
+    }
+
+    oauth
+        .client_metadata_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .is_none_or(|metadata_url| metadata_url != client_id)
 }
 
 fn now_unix_ms() -> u64 {

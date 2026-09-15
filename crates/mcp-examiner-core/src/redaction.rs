@@ -256,19 +256,23 @@ pub fn is_sensitive_name(name: &str) -> bool {
         .filter(|character| character.is_ascii_alphanumeric())
         .flat_map(char::to_lowercase)
         .collect::<String>();
+
+    if normalized.ends_with("endpoint") || normalized.ends_with("supported") {
+        return false;
+    }
+
     [
         "authorization",
         "cookie",
         "apikey",
-        "accesstoken",
-        "refreshtoken",
         "password",
         "passwd",
         "secret",
-        "token",
     ]
     .iter()
     .any(|marker| normalized.contains(marker))
+        || normalized == "token"
+        || normalized.ends_with("token")
 }
 
 fn collect_url_credentials(url: &str, secrets: &mut BTreeSet<String>) {
@@ -352,11 +356,44 @@ mod tests {
             "X-API-Key",
             "access_token",
             "dbPassword",
+            "id_token",
         ] {
             assert!(is_sensitive_name(name), "expected {name} to be sensitive");
         }
         assert!(!is_sensitive_name("content-type"));
         assert!(!is_sensitive_name("client-id"));
+    }
+
+    #[test]
+    fn preserves_public_oauth_metadata_fields() {
+        let data = serde_json::json!({
+            "authorization_endpoint": "https://auth.example.test/authorize",
+            "token_endpoint": "https://auth.example.test/token",
+            "token_endpoint_auth_methods_supported": ["client_secret_post"],
+            "token_type": "Bearer",
+            "access_token": "access-secret",
+            "refresh_token": "refresh-secret",
+            "id_token": "id-secret",
+        });
+
+        let redacted = Redactor::default().redact_json(&data);
+
+        assert_eq!(
+            redacted["authorization_endpoint"],
+            "https://auth.example.test/authorize"
+        );
+        assert_eq!(
+            redacted["token_endpoint"],
+            "https://auth.example.test/token"
+        );
+        assert_eq!(
+            redacted["token_endpoint_auth_methods_supported"],
+            serde_json::json!(["client_secret_post"])
+        );
+        assert_eq!(redacted["token_type"], "Bearer");
+        assert_eq!(redacted["access_token"], REDACTED);
+        assert_eq!(redacted["refresh_token"], REDACTED);
+        assert_eq!(redacted["id_token"], REDACTED);
     }
 
     #[test]

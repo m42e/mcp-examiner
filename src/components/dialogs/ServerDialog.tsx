@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, LoaderCircle, Save, X } from "lucide-react";
 import type { SecretSummary, TransportConfig } from "../../contracts";
 import type { ServerDraft, ServerEditorState } from "../../lib/profile";
@@ -22,8 +22,25 @@ export function ServerDialog({
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const { draft } = state;
+  const initialDraft = useRef(JSON.stringify(draft));
+  const hasUnsavedChanges = JSON.stringify(draft) !== initialDraft.current;
   const update = (patch: Partial<ServerDraft>) => onChange({ ...state, draft: { ...draft, ...patch } });
   const remote = draft.transportType !== "stdio";
+  const requestClose = () => {
+    if (hasUnsavedChanges && !window.confirm("Discard unsaved server changes?")) return;
+    onClose();
+  };
+
+  useEffect(() => {
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      requestClose();
+    }
+
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [hasUnsavedChanges, onClose]);
 
   return (
     <div className="dialog-backdrop" role="presentation">
@@ -46,7 +63,7 @@ export function ServerDialog({
             <span className="eyebrow">Server configuration</span>
             <h2 id="server-dialog-title">{state.originalName ? "Edit MCP server" : "Add MCP server"}</h2>
           </div>
-          <button className="icon-button" type="button" onClick={onClose} aria-label="Close"><X size={18} /></button>
+          <button className="icon-button" type="button" onClick={requestClose} aria-label="Close"><X size={18} /></button>
         </header>
 
         <div className="server-form">
@@ -84,7 +101,7 @@ export function ServerDialog({
 
         {error && <div className="import-message import-error"><AlertTriangle size={15} /><span>{error}</span></div>}
         <footer className="dialog-footer">
-          <button className="text-button" type="button" onClick={onClose}>Cancel</button>
+          <button className="text-button" type="button" onClick={requestClose}>Cancel</button>
           <button className="primary-button" type="submit" disabled={saving}>{saving ? <LoaderCircle className="spin" size={15} /> : <Save size={15} />} {saving ? "Saving" : "Save server"}</button>
         </footer>
       </form>

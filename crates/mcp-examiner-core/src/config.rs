@@ -321,6 +321,7 @@ fn parse_oauth(value: Option<&Value>, name: &str) -> Result<Option<OAuthConfig>,
         .ok_or_else(|| format!("Server '{name}' field 'oauth' must be an object"))?;
 
     let callback_port = match object.get("callbackPort") {
+        Some(Value::Null) | None => None,
         Some(value) => {
             let raw = value.as_u64().ok_or_else(|| {
                 format!("Server '{name}' field 'oauth.callbackPort' must be an integer")
@@ -329,7 +330,6 @@ fn parse_oauth(value: Option<&Value>, name: &str) -> Result<Option<OAuthConfig>,
                 format!("Server '{name}' field 'oauth.callbackPort' is outside the valid range")
             })?)
         }
-        None => None,
     };
 
     Ok(Some(OAuthConfig {
@@ -527,7 +527,7 @@ mod tests {
     #[test]
     fn imports_auto_transport_as_auto_detected_http() {
         let result = import_config(
-            r#"{"mcpServers":{"remote":{"type":"auto","url":"https://example.test/mcp","headers":{"Authorization":"Bearer ${secret:token}"},"oauth":{"clientMetadataUrl":"https://example.test/client-metadata.json"}}}}"#,
+            r#"{"mcpServers":{"remote":{"type":"auto","url":"https://example.test/mcp","headers":{"Authorization":"Bearer ${secret:token}"},"oauth":{"clientMetadataUrl":"https://example.test/client-metadata.json","callbackPort":null}}}}"#,
             ConfigSourceKind::Auto,
             None,
          )

@@ -1,4 +1,4 @@
-import { ChevronDown, LoaderCircle, LogIn, Pencil, PlugZap, Unplug } from "lucide-react";
+import { ChevronDown, LoaderCircle, LogIn, Pencil, PlugZap, RefreshCw, Unplug, X } from "lucide-react";
 import type { AppInfo, ConnectionSnapshot, ServerProfile } from "../../contracts";
 import { endpointLabel, protocolValue } from "../../lib/profile";
 
@@ -8,11 +8,14 @@ export type ServerHeaderProps = {
   canConnect: boolean;
   connecting: boolean;
   oauthRequired: boolean;
+  oauthDynamicFallback: boolean;
   oauthLoggingIn: boolean;
   protocolVersions: AppInfo["protocolVersions"];
   onEdit: () => void;
   onProtocolChange: (value: string) => void;
   onOAuthLogin: () => void;
+  onOAuthDynamicFallback: () => void;
+  onOAuthCancel: () => void;
   onConnect: () => void;
   onDisconnect: () => void;
 };
@@ -23,11 +26,14 @@ export function ServerHeader({
   canConnect,
   connecting,
   oauthRequired,
+  oauthDynamicFallback,
   oauthLoggingIn,
   protocolVersions,
   onEdit,
   onProtocolChange,
   onOAuthLogin,
+  onOAuthDynamicFallback,
+  onOAuthCancel,
   onConnect,
   onDisconnect,
 }: ServerHeaderProps) {
@@ -72,15 +78,34 @@ export function ServerHeader({
           <ChevronDown size={14} aria-hidden="true" />
         </label>
         {oauthRequired && !connection && (
-          <button
-            className="secondary-button"
-            type="button"
-            onClick={onOAuthLogin}
-            disabled={!canConnect || connecting || oauthLoggingIn}
-          >
-            {oauthLoggingIn ? <LoaderCircle className="spin" size={16} /> : <LogIn size={16} />}
-            {oauthLoggingIn ? "Logging in" : "Log in"}
-          </button>
+          oauthLoggingIn ? (
+            <button
+              className="secondary-button"
+              type="button"
+              onClick={onOAuthCancel}
+              disabled={!canConnect}
+            >
+              <X size={16} /> Cancel login
+            </button>
+          ) : oauthDynamicFallback ? (
+            <button
+              className="secondary-button"
+              type="button"
+              onClick={onOAuthDynamicFallback}
+              disabled={!canConnect || connecting}
+            >
+              <RefreshCw size={16} /> Retry with DCR
+            </button>
+          ) : (
+            <button
+              className="secondary-button"
+              type="button"
+              onClick={onOAuthLogin}
+              disabled={!canConnect || connecting}
+            >
+              <LogIn size={16} /> Log in
+            </button>
+          )
         )}
         {connection ? (
           <button

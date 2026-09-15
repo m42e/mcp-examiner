@@ -82,6 +82,14 @@ export type SecretSummary = {
   available: boolean;
 };
 
+export type OAuthCredentialSummary = {
+  id: string;
+  serverName: string;
+  endpoint: string;
+  tokenStored: boolean;
+  dynamicClientRegistered: boolean;
+};
+
 export type ImportResult = {
   formatVersion: number;
   sourceKind: ConfigSourceKind;
@@ -137,9 +145,27 @@ export type PromptSummary = {
   arguments?: PromptArgumentSummary[];
 };
 
+export type OAuthSnapshot = {
+  discoverySource:
+    | "protectedResourceMetadata"
+    | "authorizationServerMetadata"
+    | "configuredMetadata"
+    | "legacyEndpointFallback";
+  authorizationServer: string | null;
+  registrationMethod:
+    | "preRegistered"
+    | "clientIdMetadataDocument"
+    | "dynamicClientRegistration"
+    | "manual";
+  clientIdMetadataDocumentSupported: boolean;
+  dynamicClientRegistrationSupported: boolean;
+  scopesSupported: string[];
+};
+
 export type ConnectionSnapshot = {
   serverName: string;
   protocolVersion: string;
+  authorization: OAuthSnapshot | null;
   serverInfo: unknown | null;
   capabilities: unknown;
   instructions: string | null;
@@ -235,6 +261,7 @@ export type HttpObservation = {
   url: string;
   requestHeaders: Record<string, string>;
   requestBody: unknown | null;
+  responseHeaders: Record<string, string>;
   responseKind: string | null;
   responseBody: unknown | null;
   sessionId: string | null;

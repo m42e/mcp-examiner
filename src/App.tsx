@@ -7,6 +7,7 @@ import type {
   ConfigSourceKind,
   ConnectionSnapshot,
   ImportResult,
+  OAuthCredentialSummary,
   ProtocolEvent,
   RecentConfig,
   ServerProfile,
@@ -82,9 +83,19 @@ const recentConfigsStorageKey = "mcp-examiner.recent-configs";
 const fontScaleStorageKey = "mcp-examiner.font-scale";
 const maxRecentConfigs = 8;
 const oauthAuthorizationRequiredMessage = "OAuth login required for MCP server";
+const oauthLoginCancelledMessage = "OAuth login cancelled";
 
 function isOAuthAuthorizationRequired(error: unknown) {
   return String(error).includes(oauthAuthorizationRequiredMessage);
+}
+
+function isOAuthLoginCancelled(error: unknown) {
+  return String(error).includes(oauthLoginCancelledMessage);
+}
+
+function profileHasClientMetadataUrl(profile: ServerProfile) {
+  if (profile.transport.type === "stdio" || profile.transport.type === "websocket") return false;
+  return Boolean(profile.transport.oauth?.clientMetadataUrl?.trim());
 }
 
 function readFontScale(): FontScale {
@@ -146,6 +157,7 @@ function App() {
   >({});
   const [connectingName, setConnectingName] = useState<string | null>(null);
   const [oauthRequiredNames, setOauthRequiredNames] = useState<Record<string, boolean>>({});
+  const [oauthDcrFallbackInputs, setOauthDcrFallbackInputs] = useState<Record<string, Record<string, string>>>({});
   const [oauthLoginName, setOauthLoginName] = useState<string | null>(null);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [connectionToastVisible, setConnectionToastVisible] = useState(false);
@@ -163,6 +175,7 @@ function App() {
   } | null>(null);
   const [serverEditor, setServerEditor] = useState<ServerEditorState | null>(null);
   const [secrets, setSecrets] = useState<SecretSummary[]>([]);
+  const [oauthCredentials, setOauthCredentials] = useState<OAuthCredentialSummary[]>([]);
   const [secretError, setSecretError] = useState<string | null>(null);
   const [showSecrets, setShowSecrets] = useState(false);
 
@@ -226,7 +239,12 @@ function App() {
       return;
     }
     try {
-      setSecrets(await invoke<SecretSummary[]>("list_secrets"));
+      const [storedSecrets, storedOauthCredentials] = await Promise.all([
+        invoke<SecretSummary[]>("list_secrets"),
+        invoke<OAuthCredentialSummary[]>("list_oauth_credentials", { profiles }),
+      ]);
+      setSecrets(storedSecrets);
+      setOauthCredentials(storedOauthCredentials);
       setSecretError(null);
     } catch (error) {
       setSecretError(String(error));
@@ -574,6 +592,7 @@ function App() {
   async function connectProfile(
     profile: ServerProfile,
     inputs: Record<string, string>,
+    useDynamicRegistration = false,
   ) {
     setResolutionRequest(null);
     setConnectingName(profile.name);
@@ -596,7 +615,14 @@ function App() {
           throw error;
         }
         setOauthRequiredNames((current) => ({ ...current, [profile.name]: true }));
-        await loginWithOAuth(profile, inputs);
+        try {
+          await loginWithOAuth(profile, inputs, useDynamicRegistration);
+        } catch (loginError) {
+          if (!useDynamicRegistration && isOAuthLoginCancelled(loginError) && profileHasClientMetadataUrl(profile)) {
+            setOauthDcrFallbackInputs((current) => ({ ...current, [profile.name]: inputs }));
+          }
+          throw loginError;
+        }
         snapshot = await invoke<ConnectionSnapshot>("connect_server", {
           profile,
           context: { inputs },
@@ -612,6 +638,12 @@ function App() {
         ...current,
         [profile.name]: snapshot,
       }));
+      setOauthDcrFallbackInputs((current) => {
+        if (!(profile.name in current)) return current;
+        const next = { ...current };
+        delete next[profile.name];
+        return next;
+      });
       await refreshProtocolCount(profile.name);
       setActiveTab(snapshot.tools.length > 0 ? "tools" : "overview");
     } catch (error) {
@@ -621,13 +653,23 @@ function App() {
     }
   }
 
-  async function loginWithOAuth(profile: ServerProfile, inputs: Record<string, string>) {
+  async function loginWithOAuth(
+    profile: ServerProfile,
+    inputs: Record<string, string>,
+    useDynamicRegistration = false,
+  ) {
     if (!isTauriRuntime()) {
       throw new Error("OAuth login requires the MCP Examiner desktop runtime.");
     }
     setOauthLoginName(profile.name);
     try {
-      await invoke("oauth_login", { request: { profile, context: { inputs } } });
+      await invoke("oauth_login", {
+        request: {
+          profile,
+          context: { inputs },
+          useDynamicRegistration,
+        },
+      });
     } finally {
       setOauthLoginName(null);
     }
@@ -635,6 +677,24 @@ function App() {
 
   async function loginSelectedWithOAuth() {
     await connectSelected();
+  }
+
+  async function retryOAuthWithDynamicRegistration() {
+    if (!selectedProfile) return;
+    const inputs = oauthDcrFallbackInputs[selectedProfile.name];
+    if (!inputs) return;
+    await connectProfile(selectedProfile, inputs, true);
+  }
+
+  async function cancelOAuthLogin() {
+    if (!selectedProfile || oauthLoginName !== selectedProfile.name || !isTauriRuntime()) return;
+    try {
+      await invoke("oauth_cancel", {
+        request: { serverName: selectedProfile.name },
+      });
+    } catch (error) {
+      reportConnectionError(error);
+    }
   }
 
   async function disconnectSelected() {
@@ -676,48 +736,52 @@ function App() {
   }
 
   return (
-    <div className="app-shell" data-font-scale={fontScale}>
-      <Titlebar
-        appInfo={appInfo}
-        fontScale={fontScale}
-        recentConfigs={recentConfigs}
-        onFontScaleChange={setFontScale}
-        onSelectConfig={(path) => void loadWorkspaceConfig(path)}
-        onOpenConfig={() => void openWorkspaceConfig()}
-      />
+    <>
+      <div className="app-shell" data-font-scale={fontScale}>
+        <Titlebar
+          appInfo={appInfo}
+          fontScale={fontScale}
+          recentConfigs={recentConfigs}
+          onFontScaleChange={setFontScale}
+          onSelectConfig={(path) => void loadWorkspaceConfig(path)}
+          onOpenConfig={() => void openWorkspaceConfig()}
+        />
 
-      <ServerRail
-        profiles={profiles}
-        filteredProfiles={filteredProfiles}
-        selectedName={selectedName}
-        connections={connections}
-        query={query}
-        onQueryChange={setQuery}
-        onSelect={(name) => {
-          setSelectedName(name);
-          setActiveTab("overview");
-        }}
-        onOpenConfig={openWorkspaceConfig}
-        onSaveConfig={saveWorkspaceConfig}
-        onAddServer={() => setServerEditor({ originalName: null, draft: emptyServerDraft() })}
-        onPasteConfig={() => setShowImport(true)}
-        onOpenSecrets={openSecrets}
-      />
+        <ServerRail
+          profiles={profiles}
+          filteredProfiles={filteredProfiles}
+          selectedName={selectedName}
+          connections={connections}
+          query={query}
+          onQueryChange={setQuery}
+          onSelect={(name) => {
+            setSelectedName(name);
+            setActiveTab("overview");
+          }}
+          onOpenConfig={openWorkspaceConfig}
+          onSaveConfig={saveWorkspaceConfig}
+          onAddServer={() => setServerEditor({ originalName: null, draft: emptyServerDraft() })}
+          onPasteConfig={() => setShowImport(true)}
+          onOpenSecrets={openSecrets}
+        />
 
-      <main className="workspace">
-        {selectedProfile ? (
-          <>
+        <main className="workspace">
+          {selectedProfile ? (
+            <>
             <ServerHeader
               profile={selectedProfile}
               connection={selectedConnection}
               canConnect={isTauriRuntime()}
               connecting={connectingName === selectedProfile.name}
               oauthRequired={oauthRequiredNames[selectedProfile.name] === true}
+              oauthDynamicFallback={Boolean(oauthDcrFallbackInputs[selectedProfile.name])}
               oauthLoggingIn={oauthLoginName === selectedProfile.name}
               protocolVersions={appInfo.protocolVersions}
               onEdit={() => setServerEditor({ originalName: selectedProfile.name, draft: profileDraft(selectedProfile) })}
               onProtocolChange={updateProtocol}
               onOAuthLogin={loginSelectedWithOAuth}
+              onOAuthDynamicFallback={() => void retryOAuthWithDynamicRegistration()}
+              onOAuthCancel={() => void cancelOAuthLogin()}
               onConnect={connectSelected}
               onDisconnect={disconnectSelected}
             />
@@ -732,8 +796,8 @@ function App() {
               {activeTab === "overview" ? (
                 <Overview
                   profile={selectedProfile}
-                  protocolVersions={appInfo.protocolVersions}
                   connection={selectedConnection}
+                  connectionError={connectionError}
                 />
               ) : activeTab === "tools" && selectedConnection ? (
                 <ToolsPanel
@@ -804,15 +868,16 @@ function App() {
                 <DisconnectedPanel tab={activeTab} />
               )}
             </section>
-          </>
-        ) : (
-          <EmptyWorkspace
-            recentConfigs={recentConfigs}
-            onSelectConfig={(path) => void loadWorkspaceConfig(path)}
-            onImport={() => setShowImport(true)}
-          />
-        )}
-      </main>
+            </>
+          ) : (
+            <EmptyWorkspace
+              recentConfigs={recentConfigs}
+              onSelectConfig={(path) => void loadWorkspaceConfig(path)}
+              onImport={() => setShowImport(true)}
+            />
+          )}
+        </main>
+      </div>
 
       {showImport && (
         <ImportDialog
@@ -848,6 +913,7 @@ function App() {
       {showSecrets && (
         <SecretsDialog
           secrets={secrets}
+          oauthCredentials={oauthCredentials}
           error={secretError}
           onChanged={refreshSecrets}
           onClose={() => setShowSecrets(false)}
@@ -868,7 +934,7 @@ function App() {
           onDismiss={() => setConnectionToastVisible(false)}
         />
       )}
-    </div>
+    </>
   );
 }
 

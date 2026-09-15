@@ -64,6 +64,14 @@ struct AutomatedRunRequest {
 struct OAuthLoginRequest {
     profile: ServerProfile,
     context: Option<ResolutionContext>,
+    #[serde(default)]
+    use_dynamic_registration: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OAuthCancelRequest {
+    server_name: String,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -142,6 +150,23 @@ fn get_secret(id: String) -> Result<String, String> {
 #[tauri::command]
 fn delete_secret(app: AppHandle, id: String) -> Result<(), String> {
     secrets::delete(&app, &id)
+}
+
+#[tauri::command]
+async fn list_oauth_credentials(
+    profiles: Vec<ServerProfile>,
+) -> Result<Vec<secrets::OAuthCredentialSummary>, String> {
+    secrets::list_oauth_credentials(&profiles).await
+}
+
+#[tauri::command]
+async fn delete_oauth_token(id: String) -> Result<(), String> {
+    secrets::delete_oauth_token(&id).await
+}
+
+#[tauri::command]
+async fn delete_dynamic_client(id: String) -> Result<(), String> {
+    secrets::delete_dynamic_client(&id).await
 }
 
 #[tauri::command]
@@ -282,7 +307,12 @@ async fn connect_server(
 }
 
 #[tauri::command]
-async fn oauth_login(app: AppHandle, request: OAuthLoginRequest) -> Result<(), String> {
+async fn oauth_login(
+    app: AppHandle,
+    request: OAuthLoginRequest,
+    oauth_logins: State<'_, oauth::OAuthLoginState>,
+    sessions: State<'_, SessionManager>,
+) -> Result<(), String> {
     let mut context = ResolutionContext::from_process();
     if let Some(request_context) = request.context {
         if request_context.workspace_folder.is_some() {
@@ -300,9 +330,29 @@ async fn oauth_login(app: AppHandle, request: OAuthLoginRequest) -> Result<(), S
         ));
     }
     let redactor = Redactor::for_connection(&profile, &context);
-    oauth::login(app, profile)
-        .await
-        .map_err(|error| redactor.redact_text(&error))
+    let server_name = profile.name.clone();
+    let cancellation = oauth_logins.begin(&server_name)?;
+    let recorder = sessions
+        .oauth_transport_recorder(&server_name, redactor.clone())
+        .await;
+    let result = oauth::login(
+        app,
+        profile,
+        recorder,
+        cancellation,
+        request.use_dynamic_registration,
+    )
+    .await;
+    oauth_logins.finish(&server_name)?;
+    result.map_err(|error| redactor.redact_text(&error))
+}
+
+#[tauri::command]
+fn oauth_cancel(
+    request: OAuthCancelRequest,
+    oauth_logins: State<'_, oauth::OAuthLoginState>,
+) -> Result<(), String> {
+    oauth_logins.cancel(&request.server_name)
 }
 
 #[tauri::command]
@@ -378,6 +428,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(SessionManager::default())
+        .manage(oauth::OAuthLoginState::default())
         .invoke_handler(tauri::generate_handler![
             app_info,
             read_document,
@@ -386,12 +437,16 @@ pub fn run() {
             set_secret,
             get_secret,
             delete_secret,
+            list_oauth_credentials,
+            delete_oauth_token,
+            delete_dynamic_client,
             import_config_preview,
             validate_test_set,
             run_automated_test,
             save_report_bundle,
             connect_server,
             oauth_login,
+            oauth_cancel,
             call_tool,
             disconnect_server,
             session_events,

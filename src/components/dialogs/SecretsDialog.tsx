@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { AlertTriangle, Eye, EyeOff, KeyRound, LoaderCircle, Pencil, Plus, Save, Trash2, X } from "lucide-react";
+import { AlertTriangle, Eye, EyeOff, KeyRound, LoaderCircle, Pencil, Plus, Save, ShieldCheck, Trash2, X } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
-import type { SecretSummary } from "../../contracts";
+import type { OAuthCredentialSummary, SecretSummary } from "../../contracts";
 import { isTauriRuntime } from "../../lib/tauri";
 
 type SecretEditorState = {
@@ -13,11 +13,13 @@ type SecretEditorState = {
 
 export function SecretsDialog({
   secrets,
+  oauthCredentials,
   error,
   onChanged,
   onClose,
 }: {
   secrets: SecretSummary[];
+  oauthCredentials: OAuthCredentialSummary[];
   error: string | null;
   onChanged: () => Promise<void>;
   onClose: () => void;
@@ -110,6 +112,36 @@ export function SecretsDialog({
     }
   }
 
+  async function deleteOAuthToken(credential: OAuthCredentialSummary) {
+    if (!window.confirm(`Delete the stored OAuth token for '${credential.serverName}'?`)) return;
+    setBusy(true);
+    setFormError(null);
+    try {
+      await invoke("delete_oauth_token", { id: credential.id });
+      await onChanged();
+    } catch (deleteError) {
+      setFormError(String(deleteError));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteDynamicClient(credential: OAuthCredentialSummary) {
+    if (!window.confirm(`Delete the dynamic OAuth client for '${credential.serverName}'? This also deletes its stored OAuth token.`)) return;
+    setBusy(true);
+    setFormError(null);
+    try {
+      await invoke("delete_dynamic_client", { id: credential.id });
+      await onChanged();
+    } catch (deleteError) {
+      setFormError(String(deleteError));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const hasEntries = secrets.length > 0 || oauthCredentials.length > 0;
+
   return (
     <div className="dialog-backdrop" role="presentation">
       <section
@@ -134,6 +166,7 @@ export function SecretsDialog({
         </header>
 
         <div className="secret-list" aria-label="Managed secrets">
+          {secrets.length > 0 && <div className="secret-section-heading">Managed keychain values</div>}
           {secrets.map((secret) => (
             <div className="secret-row" key={secret.id}>
               <KeyRound size={16} aria-hidden="true" />
@@ -153,7 +186,21 @@ export function SecretsDialog({
               </div>
             </div>
           ))}
-          {secrets.length === 0 && <div className="secret-list-empty"><KeyRound size={22} /><span>No managed secrets</span><small>Add one here or mark a server header/environment value as secret.</small></div>}
+          {oauthCredentials.length > 0 && <div className="secret-section-heading">OAuth credentials</div>}
+          {oauthCredentials.map((credential) => (
+            <div className="secret-row oauth-secret-row" key={credential.id}>
+              <ShieldCheck size={16} aria-hidden="true" />
+              <div className="secret-row-copy">
+                <strong>{credential.serverName}</strong>
+                <small><code>{credential.endpoint}</code> / {credential.tokenStored ? "OAuth token stored" : "No OAuth token"}{credential.dynamicClientRegistered ? " / Dynamic client registered" : ""}</small>
+              </div>
+              <div className="oauth-secret-status" aria-label={`${credential.serverName} OAuth status`}>
+                {credential.tokenStored && <button className="oauth-secret-action" type="button" disabled={busy} onClick={() => void deleteOAuthToken(credential)} aria-label={`Delete OAuth token for ${credential.serverName}`} title="Delete OAuth token"><span>Token stored</span><Trash2 size={14} /></button>}
+                {credential.dynamicClientRegistered && <button className="oauth-secret-action" type="button" disabled={busy} onClick={() => void deleteDynamicClient(credential)} aria-label={`Delete dynamic client for ${credential.serverName}`} title="Delete dynamic client"><span>Dynamic client</span><Trash2 size={14} /></button>}
+              </div>
+            </div>
+          ))}
+          {!hasEntries && <div className="secret-list-empty"><KeyRound size={22} /><span>No managed secrets</span><small>Add one here or mark a server header/environment value as secret.</small></div>}
         </div>
 
         {(error || formError) && <div className="secret-dialog-message" role="alert"><AlertTriangle size={15} /><span>{formError ?? error}</span></div>}

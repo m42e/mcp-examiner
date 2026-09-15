@@ -52,10 +52,18 @@ export function NetworkPanel({
               <div className="network-evidence">
                 <section>
                   <h3>Request</h3>
-                  <pre>{JSON.stringify({ headers: event.requestHeaders, body: event.requestBody }, null, 2)}</pre>
+                  <details className="network-headers">
+                    <summary>Headers</summary>
+                    <pre>{JSON.stringify(event.requestHeaders, null, 2)}</pre>
+                  </details>
+                  <pre>{JSON.stringify({ body: event.requestBody }, null, 2)}</pre>
                 </section>
                 <section>
                   <h3>Response</h3>
+                  <details className="network-headers">
+                    <summary>Headers</summary>
+                    <pre>{JSON.stringify(event.responseHeaders, null, 2)}</pre>
+                  </details>
                   <pre>{JSON.stringify({ body: event.responseBody ?? null, sessionId: event.sessionId, error: event.error }, null, 2)}</pre>
                 </section>
               </div>

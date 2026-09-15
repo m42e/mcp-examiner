@@ -60,6 +60,9 @@
 }
 
 .network-evidence section {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
   min-width: 0;
   background: #fff;
 }
@@ -72,7 +75,26 @@
   text-transform: uppercase;
 }
 
+.network-headers {
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.network-headers summary {
+  display: block;
+  padding: 8px 12px;
+  cursor: pointer;
+  color: #656b61;
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.network-headers pre {
+  border-top: 1px solid var(--line);
+}
+
 .network-evidence pre {
+  flex: 1;
   max-height: 320px;
 }
 
