@@ -2307,7 +2307,7 @@ dependencies = [
 
 [[package]]
 name = "mcp-examiner-app"
-version = "0.1.4"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "keyring",
@@ -2324,7 +2324,7 @@ dependencies = [
 
 [[package]]
 name = "mcp-examiner-cli"
-version = "0.1.4"
+version = "0.2.0"
 dependencies = [
  "clap",
  "mcp-examiner-core",
@@ -2334,7 +2334,7 @@ dependencies = [
 
 [[package]]
 name = "mcp-examiner-core"
-version = "0.1.4"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "bytes",
