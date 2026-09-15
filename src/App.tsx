@@ -419,7 +419,6 @@ function App() {
       setImportPath(savedPath);
       rememberRecentConfig(savedPath);
       setConfigDirty(false);
-      setConnectionError(null);
       return true;
     } catch (error) {
       reportConnectionError(error);
