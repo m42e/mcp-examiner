@@ -170,6 +170,11 @@ fn resolve_oauth(
                     .as_deref()
                     .map(|value| resolve_string(value, context))
                     .transpose()?,
+                client_metadata_url: oauth
+                    .client_metadata_url
+                    .as_deref()
+                    .map(|value| resolve_string(value, context))
+                    .transpose()?,
                 callback_port: oauth.callback_port,
                 scopes: oauth
                     .scopes

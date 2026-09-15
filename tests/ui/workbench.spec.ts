@@ -60,6 +60,78 @@ test("keeps primary controls inside a narrow viewport", async ({ page }) => {
   await page.screenshot({ path: "test-results/workbench-narrow.png" });
 });
 
+test("offers OAuth login only after the MCP server requires authorization", async ({ page }) => {
+  await page.addInitScript(() => {
+    const runtime = window as typeof window & {
+      __TAURI_INTERNALS__: {
+        invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown>;
+        transformCallback: (callback: (payload: unknown) => void) => number;
+        unregisterCallback: (id: number) => void;
+        runCallback: (id: number, payload: unknown) => void;
+      };
+    };
+    runtime.__TAURI_INTERNALS__ = {
+      invoke: async (command) => {
+        if (command === "app_info") {
+          return {
+            name: "MCP Examiner",
+            version: "0.1.0",
+            formatVersion: 1,
+            protocolVersions: ["2025-11-25"],
+          };
+        }
+        if (command === "list_secrets") return [];
+        if (command === "import_config_preview") {
+          return {
+            formatVersion: 1,
+            sourceKind: "generic",
+            diagnostics: [],
+            inputs: [],
+            profiles: [
+              {
+                formatVersion: 1,
+                name: "public-http-server",
+                transport: {
+                  type: "http",
+                  url: "https://example.test/mcp",
+                  headers: {},
+                  oauth: null,
+                },
+                protocol: { mode: "auto", legacyVersion: null },
+                source: { kind: "generic", path: null, scope: null },
+                timeoutMs: 5000,
+                trusted: false,
+              },
+            ],
+          };
+        }
+        if (command === "connect_server") {
+          throw new Error("OAuth login required for MCP server");
+        }
+        if (command === "oauth_login") {
+          throw new Error("OAuth login was cancelled");
+        }
+        throw new Error(`Unexpected command: ${command}`);
+      },
+      transformCallback: () => 1,
+      unregisterCallback: () => undefined,
+      runCallback: () => undefined,
+    };
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Paste MCP JSON" }).click();
+  const importDialog = page.getByRole("dialog", { name: "Import servers" });
+  await importDialog.getByRole("button", { name: "Preview" }).click();
+  await importDialog.getByRole("button", { name: "Import 1" }).click();
+
+  await expect(page.getByRole("heading", { name: "public-http-server" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Log in" })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Connect", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Log in" })).toBeVisible();
+});
+
 test("loads a recent config from the empty workspace and titlebar menu", async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem(
@@ -309,7 +381,7 @@ test("imports, connects, and exercises manual server primitives", async ({ page 
                     },
                     count: {
                       type: "integer",
-                      default: 2,
+                      exclusiveMinimum: 0,
                       description: "Maximum number of results to return in one pass.",
                     },
                     enabled: {
@@ -319,6 +391,24 @@ test("imports, connects, and exercises manual server primitives", async ({ page 
                     },
                   },
                 },
+                outputSchema: null,
+                annotations: null,
+                metadata: null,
+              },
+              {
+                name: "zeta",
+                title: "Zeta",
+                description: "Return the zeta value.",
+                inputSchema: { type: "object", properties: {} },
+                outputSchema: null,
+                annotations: null,
+                metadata: null,
+              },
+              {
+                name: "alpha",
+                title: "Alpha",
+                description: "Return the alpha value.",
+                inputSchema: { type: "object", properties: {} },
                 outputSchema: null,
                 annotations: null,
                 metadata: null,
@@ -527,7 +617,7 @@ test("imports, connects, and exercises manual server primitives", async ({ page 
   await expect(releaseRow).toHaveCount(0);
   await managedSecrets.getByRole("button", { name: "Close" }).click();
   await expect(page.getByRole("heading", { name: "Echo" })).toBeVisible();
-  await expect(page.getByLabel("1 tools")).toBeVisible();
+  await expect(page.getByLabel("3 tools")).toBeVisible();
   await expect(page.getByLabel("1 resources")).toBeVisible();
   await expect(page.getByLabel("1 prompts")).toBeVisible();
   await expect(page.getByLabel("2 messages")).toBeVisible();
@@ -537,7 +627,7 @@ test("imports, connects, and exercises manual server primitives", async ({ page 
   await page.getByRole("button", { name: "Generate" }).click();
   const generateDialog = page.getByRole("dialog", { name: "Select tests to generate" });
   await expect(generateDialog).toBeVisible();
-  await expect(generateDialog.getByRole("checkbox")).toHaveCount(3);
+  await expect(generateDialog.getByRole("checkbox")).toHaveCount(5);
   for (const checkbox of await generateDialog.getByRole("checkbox").all()) {
     await expect(checkbox).toBeChecked();
   }
@@ -559,10 +649,29 @@ test("imports, connects, and exercises manual server primitives", async ({ page 
   await expect(generatedSource).not.toHaveValue(/"uri": "fixture:\/\/readme"/);
   await expect(generatedSource).toHaveValue(/"name": "greeting"/);
   await expect(generatedSource).toHaveValue(/"mode": "fast"/);
-  await expect(generatedSource).toHaveValue(/"count": 2/);
+  await expect(generatedSource).toHaveValue(/"count": 1/);
   await expect(generatedSource).toHaveValue(/"enabled": true/);
-  await expect(page.getByLabel("2 tests")).toBeVisible();
+  await expect(page.getByLabel("4 tests")).toBeVisible();
   await page.getByRole("button", { name: "Tools" }).click();
+
+  const toolButtons = page.locator(".tool-list button");
+  await expect(toolButtons).toHaveCount(3);
+  await expect(toolButtons.nth(0)).toContainText("Echo");
+  await expect(toolButtons.nth(1)).toContainText("Zeta");
+  await expect(toolButtons.nth(2)).toContainText("Alpha");
+  await page.getByLabel("Filter tools").fill("alpha");
+  await expect(toolButtons).toHaveCount(1);
+  await expect(toolButtons.first()).toContainText("Alpha");
+  await page.getByLabel("Filter tools").fill("");
+  await page.getByLabel("Sort tools").selectOption("name-asc");
+  await expect(toolButtons.nth(0)).toContainText("Alpha");
+  await expect(toolButtons.nth(1)).toContainText("Echo");
+  await expect(toolButtons.nth(2)).toContainText("Zeta");
+  await page.getByLabel("Sort tools").selectOption("name-desc");
+  await expect(toolButtons.nth(0)).toContainText("Zeta");
+  await expect(toolButtons.nth(1)).toContainText("Echo");
+  await expect(toolButtons.nth(2)).toContainText("Alpha");
+  await page.getByLabel("Sort tools").selectOption("default");
 
   const markdownToggle = page.getByRole("button", { name: /formatted descriptions/ });
   await expect(markdownToggle).toHaveAttribute("aria-pressed", "true");
@@ -570,6 +679,7 @@ test("imports, connects, and exercises manual server primitives", async ({ page 
   await expect(page.locator(".tool-description pre")).toHaveCount(0);
   await expect(page.locator(".tool-description ul")).toBeVisible();
   await expect(page.locator(".schema-field-description strong")).toHaveText("message");
+  await expect(page.getByRole("spinbutton", { name: /^count\b/ })).toHaveValue("1");
   await markdownToggle.click();
   await expect(page.getByRole("button", { name: "Enable formatted descriptions" })).toHaveAttribute("aria-pressed", "false");
   await expect(page.locator(".tool-description strong")).toHaveCount(0);

@@ -7,7 +7,7 @@ export type ServerHeaderProps = {
   connection: ConnectionSnapshot | null;
   canConnect: boolean;
   connecting: boolean;
-  oauthConfigured: boolean;
+  oauthRequired: boolean;
   oauthLoggingIn: boolean;
   protocolVersions: AppInfo["protocolVersions"];
   onEdit: () => void;
@@ -22,7 +22,7 @@ export function ServerHeader({
   connection,
   canConnect,
   connecting,
-  oauthConfigured,
+  oauthRequired,
   oauthLoggingIn,
   protocolVersions,
   onEdit,
@@ -71,7 +71,7 @@ export function ServerHeader({
           </select>
           <ChevronDown size={14} aria-hidden="true" />
         </label>
-        {oauthConfigured && !connection && (
+        {oauthRequired && !connection && (
           <button
             className="secondary-button"
             type="button"

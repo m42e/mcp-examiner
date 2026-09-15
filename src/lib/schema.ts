@@ -8,6 +8,7 @@ export type JsonSchema = {
   required?: string[];
   items?: JsonSchema;
   minimum?: number;
+  exclusiveMinimum?: number;
   maximum?: number;
 };
 
@@ -35,7 +36,15 @@ export function emptySchemaValue(schema: JsonSchema): unknown {
     case "array": return [];
     case "boolean": return false;
     case "number":
-    case "integer": return 0;
+    case "integer": {
+      const minimum = typeof schema.minimum === "number" ? schema.minimum : undefined;
+      const exclusiveMinimum = typeof schema.exclusiveMinimum === "number" ? schema.exclusiveMinimum : undefined;
+      if (exclusiveMinimum !== undefined && (minimum === undefined || exclusiveMinimum >= minimum)) {
+        return schemaType(schema) === "integer" ? Math.floor(exclusiveMinimum) + 1 : exclusiveMinimum + 1;
+      }
+      if (minimum !== undefined) return schemaType(schema) === "integer" ? Math.ceil(minimum) : minimum;
+      return 0;
+    }
     default: return "";
   }
 }

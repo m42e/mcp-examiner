@@ -334,6 +334,7 @@ fn parse_oauth(value: Option<&Value>, name: &str) -> Result<Option<OAuthConfig>,
 
     Ok(Some(OAuthConfig {
         client_id: optional_string(object, "clientId", name)?,
+        client_metadata_url: optional_string(object, "clientMetadataUrl", name)?,
         callback_port,
         scopes: optional_string(object, "scopes", name)?,
         auth_server_metadata_url: optional_string(object, "authServerMetadataUrl", name)?,
@@ -526,7 +527,7 @@ mod tests {
     #[test]
     fn imports_auto_transport_as_auto_detected_http() {
         let result = import_config(
-            r#"{"mcpServers":{"remote":{"type":"auto","url":"https://example.test/mcp","headers":{"Authorization":"Bearer ${secret:token}"}}}}"#,
+            r#"{"mcpServers":{"remote":{"type":"auto","url":"https://example.test/mcp","headers":{"Authorization":"Bearer ${secret:token}"},"oauth":{"clientMetadataUrl":"https://example.test/client-metadata.json"}}}}"#,
             ConfigSourceKind::Auto,
             None,
          )
@@ -536,6 +537,15 @@ mod tests {
             result.profiles[0].transport,
             TransportConfig::Auto { .. }
         ));
+        let TransportConfig::Auto { oauth, .. } = &result.profiles[0].transport else {
+            unreachable!();
+        };
+        assert_eq!(
+            oauth
+                .as_ref()
+                .and_then(|oauth| oauth.client_metadata_url.as_deref()),
+            Some("https://example.test/client-metadata.json")
+        );
     }
 
     #[test]

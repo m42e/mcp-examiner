@@ -1,0 +1,15 @@
+{
+  "client_id": "https://raw.githubusercontent.com/m42e/mcp-examiner/main/public/mcp-examiner-client-metadata.json",
+  "client_name": "MCP Examiner",
+  "client_uri": "https://github.com/m42e/mcp-examiner",
+  "redirect_uris": [
+    "http://127.0.0.1:43123/oauth/callback"
+  ],
+  "grant_types": [
+    "authorization_code"
+  ],
+  "response_types": [
+    "code"
+  ],
+  "token_endpoint_auth_method": "none"
+}

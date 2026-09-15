@@ -63,6 +63,7 @@ export function ServerDialog({
                 <fieldset className="oauth-fields server-form-wide">
                   <legend>OAuth (optional)</legend>
                   <label><span>Client ID</span><input value={draft.oauthClientId} onChange={(event) => update({ oauthClientId: event.currentTarget.value })} /></label>
+                    <label className="server-form-wide"><span>Client metadata document URL</span><input type="url" value={draft.oauthClientMetadataUrl} onChange={(event) => update({ oauthClientMetadataUrl: event.currentTarget.value })} placeholder="https://example.com/client-metadata.json" /></label>
                   <label><span>Scopes</span><input value={draft.oauthScopes} onChange={(event) => update({ oauthScopes: event.currentTarget.value })} /></label>
                   <label className="server-form-wide"><span>Authorization metadata URL</span><input type="url" value={draft.oauthMetadataUrl} onChange={(event) => update({ oauthMetadataUrl: event.currentTarget.value })} /></label>
                   <label><span>Callback port</span><input type="number" min="1" max="65535" value={draft.oauthCallbackPort} onChange={(event) => update({ oauthCallbackPort: event.currentTarget.value })} /></label>

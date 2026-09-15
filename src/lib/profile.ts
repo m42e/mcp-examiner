@@ -24,6 +24,7 @@ export type ServerDraft = {
   protocol: string;
   timeout: string;
   oauthClientId: string;
+  oauthClientMetadataUrl: string;
   oauthScopes: string;
   oauthMetadataUrl: string;
   oauthCallbackPort: string;
@@ -53,12 +54,6 @@ export function endpointLabel(transport: TransportConfig) {
     return [transport.command, ...transport.args].join(" ");
   }
   return transport.url;
-}
-
-export function oauthConfigured(profile: ServerProfile) {
-  return profile.transport.type === "http"
-    || profile.transport.type === "sse"
-    || profile.transport.type === "auto";
 }
 
 export function protocolValue(protocol: ProtocolSelection) {
@@ -129,6 +124,7 @@ export function emptyServerDraft(): ServerDraft {
     protocol: "auto",
     timeout: "",
     oauthClientId: "",
+    oauthClientMetadataUrl: "",
     oauthScopes: "",
     oauthMetadataUrl: "",
     oauthCallbackPort: "",
@@ -153,6 +149,7 @@ export function profileDraft(profile: ServerProfile): ServerDraft {
     draft.headers = keyValueEntries(profile.transport.headers);
     if (profile.transport.type !== "websocket" && profile.transport.oauth) {
       draft.oauthClientId = profile.transport.oauth.clientId ?? "";
+      draft.oauthClientMetadataUrl = profile.transport.oauth.clientMetadataUrl ?? "";
       draft.oauthScopes = profile.transport.oauth.scopes ?? "";
       draft.oauthMetadataUrl = profile.transport.oauth.authServerMetadataUrl ?? "";
       draft.oauthCallbackPort = profile.transport.oauth.callbackPort?.toString() ?? "";
@@ -191,13 +188,14 @@ export function draftProfile(draft: ServerDraft, sourcePath: string | null): Ser
       headers: entriesObject(draft.headers) as Record<string, string>,
     };
   } else {
-    const hasOAuth = Boolean(draft.oauthClientId || draft.oauthScopes || draft.oauthMetadataUrl || draft.oauthCallbackPort || draft.oauthEnterpriseManaged);
+    const hasOAuth = Boolean(draft.oauthClientId || draft.oauthClientMetadataUrl || draft.oauthScopes || draft.oauthMetadataUrl || draft.oauthCallbackPort || draft.oauthEnterpriseManaged);
     transport = {
       type: draft.transportType,
       url: draft.url.trim(),
       headers: entriesObject(draft.headers) as Record<string, string>,
       oauth: hasOAuth ? {
         clientId: draft.oauthClientId.trim() || null,
+        clientMetadataUrl: draft.oauthClientMetadataUrl.trim() || null,
         callbackPort: draft.oauthCallbackPort ? Number(draft.oauthCallbackPort) : null,
         scopes: draft.oauthScopes.trim() || null,
         authServerMetadataUrl: draft.oauthMetadataUrl.trim() || null,

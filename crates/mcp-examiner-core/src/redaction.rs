@@ -185,6 +185,10 @@ impl Redactor {
                 .client_id
                 .as_deref()
                 .map(|value| self.redact_text(value)),
+            client_metadata_url: oauth
+                .client_metadata_url
+                .as_deref()
+                .map(|value| self.redact_text(value)),
             callback_port: oauth.callback_port,
             scopes: oauth.scopes.as_deref().map(|value| self.redact_text(value)),
             auth_server_metadata_url: oauth

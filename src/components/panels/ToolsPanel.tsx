@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { LoaderCircle, Maximize2, Minimize2, Play, WrapText, Wrench } from "lucide-react";
+import { ArrowDownAZ, LoaderCircle, Maximize2, Minimize2, Play, Search, WrapText, Wrench } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import type { ToolSummary } from "../../contracts";
 import { schemaObjectInitial } from "../../lib/schema";
@@ -7,6 +7,8 @@ import { MarkdownText } from "../primitives/MarkdownText";
 import { ModeToggle } from "../primitives/ModeToggle";
 import { ResultViewer } from "../primitives/ResultViewer";
 import { SchemaForm } from "../primitives/SchemaForm";
+
+type ToolSort = "default" | "name-asc" | "name-desc";
 
 export function ToolsPanel({
   serverName,
@@ -18,6 +20,8 @@ export function ToolsPanel({
   onActivity: () => Promise<void>;
 }) {
   const [selectedName, setSelectedName] = useState(tools[0]?.name ?? "");
+  const [toolQuery, setToolQuery] = useState("");
+  const [toolSort, setToolSort] = useState<ToolSort>("default");
   const [argumentsValue, setArgumentsValue] = useState<Record<string, unknown>>(
     schemaObjectInitial(tools[0]?.inputSchema),
   );
@@ -32,6 +36,8 @@ export function ToolsPanel({
 
   useEffect(() => {
     setSelectedName(tools[0]?.name ?? "");
+    setToolQuery("");
+    setToolSort("default");
     setArgumentsValue(schemaObjectInitial(tools[0]?.inputSchema));
     setArgumentsJson("{}");
     setRawArguments(false);
@@ -43,6 +49,23 @@ export function ToolsPanel({
 
   const selectedTool =
     tools.find((tool) => tool.name === selectedName) ?? tools[0] ?? null;
+  const normalizedToolQuery = toolQuery.trim().toLowerCase();
+  const visibleTools = tools
+    .filter((tool) => {
+      if (!normalizedToolQuery) return true;
+      return [tool.name, tool.title ?? "", tool.description ?? ""]
+        .join(" ")
+        .toLowerCase()
+        .includes(normalizedToolQuery);
+    })
+    .slice();
+
+  if (toolSort !== "default") {
+    visibleTools.sort((left, right) => {
+      const comparison = left.name.localeCompare(right.name, undefined, { sensitivity: "base" });
+      return toolSort === "name-asc" ? comparison : -comparison;
+    });
+  }
 
   async function runTool() {
     if (!selectedTool) return;
@@ -90,8 +113,33 @@ export function ToolsPanel({
           <span>Available tools</span>
           <strong>{tools.length}</strong>
         </div>
+        <div className="tool-list-controls">
+          <label className="tool-search">
+            <Search size={14} aria-hidden="true" />
+            <input
+              type="search"
+              aria-label="Filter tools"
+              value={toolQuery}
+              onChange={(event) => setToolQuery(event.currentTarget.value)}
+              placeholder="Filter tools"
+            />
+          </label>
+          <label className="tool-sort">
+            <ArrowDownAZ size={13} aria-hidden="true" />
+            <span>Sort</span>
+            <select
+              aria-label="Sort tools"
+              value={toolSort}
+              onChange={(event) => setToolSort(event.currentTarget.value as ToolSort)}
+            >
+              <option value="default">Default</option>
+              <option value="name-asc">Name A-Z</option>
+              <option value="name-desc">Name Z-A</option>
+            </select>
+          </label>
+        </div>
         <div className="tool-list">
-          {tools.map((tool) => (
+          {visibleTools.length > 0 ? visibleTools.map((tool) => (
             <button
               key={tool.name}
               className={tool.name === selectedTool.name ? "tool-active" : ""}
@@ -111,7 +159,12 @@ export function ToolsPanel({
                 <small>{tool.name}</small>
               </span>
             </button>
-          ))}
+          )) : (
+            <div className="tool-list-empty">
+              <Search size={16} />
+              <span>No matching tools</span>
+            </div>
+          )}
         </div>
       </aside>
 

@@ -142,6 +142,12 @@ pub async fn start_oauth_authorization(
         request = request.with_preregistered_client(client_id);
     } else if let Some(client_id) = stored_client_id {
         request = request.with_preregistered_client(client_id);
+    } else if let Some(client_metadata_url) = oauth
+        .client_metadata_url
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        request = request.with_client_metadata_url(client_metadata_url);
     }
     if let Some(scopes) = oauth
         .scopes
@@ -153,8 +159,18 @@ pub async fn start_oauth_authorization(
 
     let session = AuthorizationSession::new(manager, request)
         .await
-        .map_err(|(_, error)| ProtocolError::OAuth(error.to_string()))?;
+        .map_err(|(_, error)| map_authorization_error(error))?;
     Ok(OAuthAuthorization { session })
+}
+
+fn map_authorization_error(error: AuthError) -> ProtocolError {
+    let message = error.to_string();
+    if message.contains("Dynamic registration failed: Dynamic client registration not supported") {
+        return ProtocolError::OAuth(
+            "OAuth server does not support dynamic client registration. Configure a pre-registered clientId, or provide a clientMetadataUrl when the authorization server advertises Client ID Metadata Document support.".to_owned(),
+        );
+    }
+    ProtocolError::OAuth(message)
 }
 
 async fn fetch_metadata(url: &str) -> Result<AuthorizationMetadata, ProtocolError> {

@@ -72,7 +72,9 @@ export function SchemaForm({
     return <input type="checkbox" checked={Boolean(value)} onChange={(event) => onChange(event.currentTarget.checked)} />;
   }
   if (type === "number" || type === "integer") {
-    return <input type="number" min={schema.minimum} max={schema.maximum} step={type === "integer" ? 1 : "any"} value={typeof value === "number" ? value : 0} onChange={(event) => onChange(event.currentTarget.valueAsNumber)} />;
+    const emptyValue = emptySchemaValue(schema);
+    const fallback = typeof emptyValue === "number" ? emptyValue : 0;
+    return <input type="number" min={schema.minimum} max={schema.maximum} step={type === "integer" ? 1 : "any"} value={typeof value === "number" ? value : fallback} onChange={(event) => onChange(event.currentTarget.valueAsNumber)} />;
   }
   return <input type="text" value={typeof value === "string" ? value : ""} onChange={(event) => onChange(event.currentTarget.value)} />;
 }

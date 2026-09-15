@@ -47,12 +47,15 @@ Remote HTTP profiles can use MCP OAuth authorization with an optional `oauth` bl
 	"url": "https://example.com/mcp",
 	"oauth": {
 		"clientId": "registered-client-id",
+		"clientMetadataUrl": "https://example.com/client-metadata.json",
 		"scopes": "tools.read"
 	}
 }
 ```
 
-The desktop app discovers the authorization server, uses a PKCE loopback callback, and opens the system browser for login. Access and refresh credentials are stored in the OS keychain, scoped to the configured server endpoint, and are never written to MCP configuration files or reports. `callbackPort` can be set when a pre-registered client requires a fixed loopback port; `authServerMetadataUrl` can be used when metadata discovery needs an explicit URL.
+The desktop app follows the MCP client-registration order: a configured `clientId`, a configured `clientMetadataUrl` when the authorization server advertises Client ID Metadata Document support, then dynamic registration as a backwards-compatible fallback. A client metadata document must be hosted at a public HTTPS URL and its JSON must use that exact URL as `client_id`, alongside `client_name` and `redirect_uris`. The app discovers the authorization server, uses a PKCE loopback callback, and opens the system browser for login. Access and refresh credentials are stored in the OS keychain, scoped to the configured server endpoint, and are never written to MCP configuration files or reports. `callbackPort` can be set when a pre-registered client requires a fixed loopback port; `authServerMetadataUrl` can be used when metadata discovery needs an explicit URL.
+
+MCP Examiner includes a repository-hosted public client metadata document at `https://raw.githubusercontent.com/m42e/mcp-examiner/main/public/mcp-examiner-client-metadata.json`. To use it, configure `clientMetadataUrl` with that exact URL and set `callbackPort` to `43123`; the hosted document registers `http://127.0.0.1:43123/oauth/callback`.
 
 ## CLI
 

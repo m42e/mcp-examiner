@@ -13,6 +13,7 @@ export type ProtocolSelection =
 
 export type OAuthConfig = {
   clientId: string | null;
+  clientMetadataUrl: string | null;
   callbackPort: number | null;
   scopes: string | null;
   authServerMetadataUrl: string | null;

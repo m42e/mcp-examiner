@@ -17,7 +17,6 @@ import {
   emptyServerDraft,
   profileDraft,
   protocolFromValue,
-  oauthConfigured,
   referencedInputIds,
   referencedSecretIds,
   serializeProfiles,
@@ -82,6 +81,11 @@ const emptyTestDocument: TestDocument = { content: "", path: null };
 const recentConfigsStorageKey = "mcp-examiner.recent-configs";
 const fontScaleStorageKey = "mcp-examiner.font-scale";
 const maxRecentConfigs = 8;
+const oauthAuthorizationRequiredMessage = "OAuth login required for MCP server";
+
+function isOAuthAuthorizationRequired(error: unknown) {
+  return String(error).includes(oauthAuthorizationRequiredMessage);
+}
 
 function readFontScale(): FontScale {
   if (typeof window === "undefined") return fontScaleOptions[0].value;
@@ -141,6 +145,7 @@ function App() {
     Record<string, ConnectionSnapshot>
   >({});
   const [connectingName, setConnectingName] = useState<string | null>(null);
+  const [oauthRequiredNames, setOauthRequiredNames] = useState<Record<string, boolean>>({});
   const [oauthLoginName, setOauthLoginName] = useState<string | null>(null);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [connectionToastVisible, setConnectionToastVisible] = useState(false);
@@ -300,6 +305,11 @@ function App() {
 
   function installImport(result: ImportResult) {
     const definitions = result.inputs ?? [];
+    setOauthRequiredNames((current) => {
+      const next = { ...current };
+      for (const profile of result.profiles) delete next[profile.name];
+      return next;
+    });
     setProfileInputs((current) => {
       const next = { ...current };
       for (const profile of result.profiles) {
@@ -420,6 +430,12 @@ function App() {
     setProfiles((current) => originalName
       ? current.map((candidate) => candidate.name === originalName ? profile : candidate)
       : [...current, profile]);
+    setOauthRequiredNames((current) => {
+      const next = { ...current };
+      if (originalName) delete next[originalName];
+      delete next[profile.name];
+      return next;
+    });
     if (originalName && originalName !== profile.name) {
       setTestDocuments((current) => {
         const next = { ...current, [profile.name]: current[originalName] ?? emptyTestDocument };
@@ -561,6 +577,12 @@ function App() {
   ) {
     setResolutionRequest(null);
     setConnectingName(profile.name);
+    setOauthRequiredNames((current) => {
+      if (!current[profile.name]) return current;
+      const next = { ...current };
+      delete next[profile.name];
+      return next;
+    });
     setConnectionError(null);
     try {
       let snapshot: ConnectionSnapshot;
@@ -570,15 +592,22 @@ function App() {
           context: { inputs },
         });
       } catch (error) {
-        if (!oauthConfigured(profile) || !String(error).includes("OAuth login required for MCP server")) {
+        if (!isOAuthAuthorizationRequired(error)) {
           throw error;
         }
+        setOauthRequiredNames((current) => ({ ...current, [profile.name]: true }));
         await loginWithOAuth(profile, inputs);
         snapshot = await invoke<ConnectionSnapshot>("connect_server", {
           profile,
           context: { inputs },
         });
       }
+      setOauthRequiredNames((current) => {
+        if (!current[profile.name]) return current;
+        const next = { ...current };
+        delete next[profile.name];
+        return next;
+      });
       setConnections((current) => ({
         ...current,
         [profile.name]: snapshot,
@@ -683,7 +712,7 @@ function App() {
               connection={selectedConnection}
               canConnect={isTauriRuntime()}
               connecting={connectingName === selectedProfile.name}
-              oauthConfigured={oauthConfigured(selectedProfile)}
+              oauthRequired={oauthRequiredNames[selectedProfile.name] === true}
               oauthLoggingIn={oauthLoginName === selectedProfile.name}
               protocolVersions={appInfo.protocolVersions}
               onEdit={() => setServerEditor({ originalName: selectedProfile.name, draft: profileDraft(selectedProfile) })}
