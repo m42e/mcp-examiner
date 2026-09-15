@@ -20,9 +20,13 @@
     grid-template-columns: 1fr;
   }
 
-  .schema-editor > textarea,
-  .tool-schema pre {
+  .schema-editor > textarea {
     height: 170px;
+  }
+
+  .tool-schema pre {
+    height: auto;
+    min-height: 170px;
   }
 }
 
@@ -74,6 +78,7 @@
 
   .tools-workbench {
     grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
   }
 
   .tool-list-panel {
@@ -83,9 +88,11 @@
 
   .tool-list {
     display: flex;
+    flex: 0 0 auto;
     max-height: 110px;
     gap: 5px;
     overflow-x: auto;
+    overflow-y: hidden;
   }
 
   .tool-list button {

@@ -1,11 +1,15 @@
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::{
+    sync::Arc,
+    time::{Instant, SystemTime, UNIX_EPOCH},
+};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{
-    AssertionOutcome, ConnectionSnapshot, FORMAT_VERSION, HttpObservation, ProtocolEvent, Redactor,
-    ResolutionContext, ServerProfile, SessionManager, TestCall, TestSet, assert_response,
+    AssertionOutcome, ConnectionSnapshot, FORMAT_VERSION, HttpObservation, OAuthCredentialStore,
+    ProtocolEvent, Redactor, ResolutionContext, ServerProfile, SessionManager, TestCall, TestSet,
+    assert_response,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -111,6 +115,20 @@ pub async fn run_test_set_with_progress<F>(
     profile: &ServerProfile,
     context: &ResolutionContext,
     test_set: &TestSet,
+    progress: F,
+) -> TestRunResult
+where
+    F: FnMut(RunProgress) + Send,
+{
+    run_test_set_with_oauth_store(sessions, profile, context, test_set, None, progress).await
+}
+
+pub async fn run_test_set_with_oauth_store<F>(
+    sessions: &SessionManager,
+    profile: &ServerProfile,
+    context: &ResolutionContext,
+    test_set: &TestSet,
+    oauth_store: Option<Arc<dyn OAuthCredentialStore>>,
     mut progress: F,
 ) -> TestRunResult
 where
@@ -158,7 +176,10 @@ where
             .collect(),
     });
 
-    match sessions.connect_with_context(profile, context).await {
+    match sessions
+        .connect_with_context_and_oauth_store(profile, context, oauth_store)
+        .await
+    {
         Ok(snapshot) => {
             result.protocol_version = Some(snapshot.protocol_version.clone());
             progress(RunProgress::Connected {

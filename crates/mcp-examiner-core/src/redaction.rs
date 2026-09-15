@@ -146,15 +146,17 @@ impl Redactor {
                 url: self.redact_text(url),
                 headers: self.redact_headers(headers),
                 oauth: oauth.as_ref().map(|oauth| self.redact_oauth(oauth)),
-            },            TransportConfig::Auto {
+            },
+            TransportConfig::Auto {
                 url,
                 headers,
                 oauth,
-             } => TransportConfig::Auto {
+            } => TransportConfig::Auto {
                 url: self.redact_text(url),
                 headers: self.redact_headers(headers),
                 oauth: oauth.as_ref().map(|oauth| self.redact_oauth(oauth)),
-             },            TransportConfig::Websocket { url, headers } => TransportConfig::Websocket {
+            },
+            TransportConfig::Websocket { url, headers } => TransportConfig::Websocket {
                 url: self.redact_text(url),
                 headers: self.redact_headers(headers),
             },
@@ -221,7 +223,9 @@ fn collect_sensitive_json_values(value: &Value, secrets: &mut BTreeSet<String>) 
 fn collect_profile_secrets(profile: &ServerProfile, secrets: &mut BTreeSet<String>) {
     match &profile.transport {
         TransportConfig::Http { url, headers, .. }
-        | TransportConfig::Sse { url, headers, .. }         | TransportConfig::Auto { url, headers, .. }        | TransportConfig::Websocket { url, headers } => {
+        | TransportConfig::Sse { url, headers, .. }
+        | TransportConfig::Auto { url, headers, .. }
+        | TransportConfig::Websocket { url, headers } => {
             collect_url_credentials(url, secrets);
             for (name, value) in headers {
                 if is_sensitive_name(name) && !value.is_empty() {

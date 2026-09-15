@@ -1,6 +1,21 @@
-import { Cable, CircleDot, FileInput } from "lucide-react";
+import { Cable, ChevronRight, CircleDot, FileInput, FolderOpen } from "lucide-react";
+import type { RecentConfig } from "../../contracts";
 
-export function EmptyWorkspace({ onImport }: { onImport: () => void }) {
+type EmptyWorkspaceProps = {
+  recentConfigs: RecentConfig[];
+  onSelectConfig: (path: string) => void;
+  onImport: () => void;
+};
+
+function configName(path: string) {
+  return path.split(/[\\/]/).pop() || path;
+}
+
+export function EmptyWorkspace({
+  recentConfigs,
+  onSelectConfig,
+  onImport,
+}: EmptyWorkspaceProps) {
   return (
     <section className="empty-workspace">
       <div className="empty-signal" aria-hidden="true">
@@ -10,6 +25,29 @@ export function EmptyWorkspace({ onImport }: { onImport: () => void }) {
       </div>
       <span className="eyebrow">Workspace ready</span>
       <h1>No servers configured</h1>
+      {recentConfigs.length > 0 && (
+        <div className="recent-configs" aria-label="Previously loaded configurations">
+          <span className="recent-configs-heading">Previously loaded</span>
+          <div className="recent-config-list">
+            {recentConfigs.map((config) => (
+              <button
+                key={config.path}
+                className="recent-config-button"
+                type="button"
+                title={config.path}
+                onClick={() => onSelectConfig(config.path)}
+              >
+                <FolderOpen size={17} />
+                <span>
+                  <strong>{configName(config.path)}</strong>
+                  <small>{config.path}</small>
+                </span>
+                <ChevronRight size={16} />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="empty-actions">
         <button className="primary-button" type="button" onClick={onImport}>
           <FileInput size={17} /> Import config

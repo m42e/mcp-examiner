@@ -5,13 +5,16 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use async_trait::async_trait;
 use keyring::Entry;
-use mcp_examiner_core::{ResolutionContext, ServerProfile};
+use mcp_examiner_core::{OAuthCredentialStore, OAuthCredentials, ResolutionContext, ServerProfile};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Manager};
 
 const KEYCHAIN_SERVICE: &str = "io.mcpexaminer.desktop.secrets";
+const OAUTH_KEYCHAIN_SERVICE: &str = "io.mcpexaminer.desktop.oauth";
 const INDEX_FILENAME: &str = "secrets.json";
 
 #[derive(Debug, Clone, Serialize)]
@@ -29,6 +32,72 @@ pub struct SetSecretRequest {
     pub id: String,
     pub label: String,
     pub value: String,
+}
+
+pub(crate) fn oauth_store(profile: &ServerProfile) -> Result<OAuthKeychainStore, String> {
+    let (endpoint, oauth) = match &profile.transport {
+        mcp_examiner_core::TransportConfig::Http { url, oauth, .. }
+        | mcp_examiner_core::TransportConfig::Sse { url, oauth, .. }
+        | mcp_examiner_core::TransportConfig::Auto { url, oauth, .. } => {
+            (url, oauth.clone().unwrap_or_default())
+        }
+        mcp_examiner_core::TransportConfig::Stdio { .. }
+        | mcp_examiner_core::TransportConfig::Websocket { .. } => {
+            return Err("OAuth credentials require an HTTP MCP server.".to_owned());
+        }
+    };
+    let mut digest = Sha256::new();
+    digest.update(profile.name.as_bytes());
+    digest.update([0]);
+    digest.update(endpoint.as_bytes());
+    digest.update([0]);
+    digest.update(serde_json::to_vec(&oauth).map_err(|error| error.to_string())?);
+    let key = digest
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    Ok(OAuthKeychainStore {
+        server_name: format!("oauth-{key}"),
+    })
+}
+
+pub(crate) struct OAuthKeychainStore {
+    server_name: String,
+}
+
+impl OAuthKeychainStore {
+    fn entry(&self) -> Result<Entry, String> {
+        Entry::new(OAUTH_KEYCHAIN_SERVICE, &self.server_name).map_err(|error| error.to_string())
+    }
+}
+
+#[async_trait]
+impl OAuthCredentialStore for OAuthKeychainStore {
+    async fn load(&self) -> Result<Option<OAuthCredentials>, String> {
+        match self.entry()?.get_password() {
+            Ok(value) => serde_json::from_str(&value)
+                .map(Some)
+                .map_err(|error| format!("Invalid stored OAuth credentials: {error}")),
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(error) => Err(format!("Could not read OAuth credentials: {error}")),
+        }
+    }
+
+    async fn save(&self, credentials: OAuthCredentials) -> Result<(), String> {
+        let value = serde_json::to_string(&credentials)
+            .map_err(|error| format!("Could not serialize OAuth credentials: {error}"))?;
+        self.entry()?
+            .set_password(&value)
+            .map_err(|error| format!("Could not store OAuth credentials: {error}"))
+    }
+
+    async fn clear(&self) -> Result<(), String> {
+        match self.entry()?.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Err(error) => Err(format!("Could not clear OAuth credentials: {error}")),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -50,7 +119,7 @@ pub fn list(app: &AppHandle) -> Result<Vec<SecretSummary>, String> {
             updated_at_unix_ms: record.updated_at_unix_ms,
         })
         .collect::<Vec<_>>();
-    summaries.sort_by(|left, right| left.label.to_lowercase().cmp(&right.label.to_lowercase()));
+    summaries.sort_by_key(|summary| summary.label.to_lowercase());
     Ok(summaries)
 }
 

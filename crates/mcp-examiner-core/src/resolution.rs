@@ -130,15 +130,17 @@ pub fn resolve_profile(
             url: resolve_string(url, context)?,
             headers: resolve_map(headers, context)?,
             oauth: resolve_oauth(oauth.as_ref(), context)?,
-        },        TransportConfig::Auto {
+        },
+        TransportConfig::Auto {
             url,
             headers,
             oauth,
-         } => TransportConfig::Auto {
+        } => TransportConfig::Auto {
             url: resolve_string(url, context)?,
             headers: resolve_map(headers, context)?,
             oauth: resolve_oauth(oauth.as_ref(), context)?,
-         },        TransportConfig::Websocket { url, headers } => TransportConfig::Websocket {
+        },
+        TransportConfig::Websocket { url, headers } => TransportConfig::Websocket {
             url: resolve_string(url, context)?,
             headers: resolve_map(headers, context)?,
         },

@@ -37,6 +37,23 @@ open "target/release/bundle/macos/MCP Examiner.app"
 
 Run the frontend by itself at `http://localhost:1420` with `npm run dev`. Rust-backed actions such as configuration import require the Tauri runtime.
 
+## OAuth login
+
+Remote HTTP profiles can use MCP OAuth authorization with an optional `oauth` block:
+
+```json
+{
+	"type": "http",
+	"url": "https://example.com/mcp",
+	"oauth": {
+		"clientId": "registered-client-id",
+		"scopes": "tools.read"
+	}
+}
+```
+
+The desktop app discovers the authorization server, uses a PKCE loopback callback, and opens the system browser for login. Access and refresh credentials are stored in the OS keychain, scoped to the configured server endpoint, and are never written to MCP configuration files or reports. `callbackPort` can be set when a pre-registered client requires a fixed loopback port; `authServerMetadataUrl` can be used when metadata discovery needs an explicit URL.
+
 ## CLI
 
 Normalize an existing client configuration:

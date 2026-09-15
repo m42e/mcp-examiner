@@ -178,6 +178,11 @@
   line-height: 1.6;
 }
 
+.automation-editor textarea::placeholder {
+  color: #7f8a7e;
+  opacity: 1;
+}
+
 .automation-note,
 .automation-valid,
 .automation-error,

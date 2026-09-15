@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { LoaderCircle, Play, Wrench } from "lucide-react";
+import { LoaderCircle, Maximize2, Minimize2, Play, WrapText, Wrench } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import type { ToolSummary } from "../../contracts";
 import { schemaObjectInitial } from "../../lib/schema";
+import { MarkdownText } from "../primitives/MarkdownText";
 import { ModeToggle } from "../primitives/ModeToggle";
 import { ResultViewer } from "../primitives/ResultViewer";
 import { SchemaForm } from "../primitives/SchemaForm";
@@ -22,6 +23,9 @@ export function ToolsPanel({
   );
   const [argumentsJson, setArgumentsJson] = useState("{}");
   const [rawArguments, setRawArguments] = useState(false);
+  const [renderMarkdown, setRenderMarkdown] = useState(true);
+  const [schemaExpanded, setSchemaExpanded] = useState(false);
+  const [schemaWrapped, setSchemaWrapped] = useState(false);
   const [result, setResult] = useState<unknown | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState(false);
@@ -31,6 +35,8 @@ export function ToolsPanel({
     setArgumentsValue(schemaObjectInitial(tools[0]?.inputSchema));
     setArgumentsJson("{}");
     setRawArguments(false);
+    setSchemaExpanded(false);
+    setSchemaWrapped(false);
     setResult(null);
     setError(null);
   }, [serverName, tools]);
@@ -116,12 +122,33 @@ export function ToolsPanel({
             <h2>{selectedTool.title ?? selectedTool.name}</h2>
             <code>{selectedTool.name}</code>
           </div>
+          <div className="tool-markdown-control">
+            <span>Descriptions</span>
+            <button
+              className="markdown-toggle"
+              type="button"
+              aria-label={renderMarkdown ? "Disable formatted descriptions" : "Enable formatted descriptions"}
+              aria-pressed={renderMarkdown}
+              title={renderMarkdown ? "Show descriptions as plain text" : "Format descriptions as Markdown"}
+              onClick={() => setRenderMarkdown((enabled) => !enabled)}
+            >
+              <span className="markdown-toggle-track" aria-hidden="true">
+                <span />
+              </span>
+              {renderMarkdown ? "Formatted" : "Plain text"}
+            </button>
+          </div>
         </header>
         {selectedTool.description && (
-          <p className="tool-description">{selectedTool.description}</p>
+          <MarkdownText
+            value={selectedTool.description}
+            renderMarkdown={renderMarkdown}
+            className="tool-description"
+            plainTag="p"
+          />
         )}
 
-        <div className="tool-editor-grid">
+        <div className={`tool-editor-grid${schemaExpanded ? " schema-expanded" : ""}`}>
           <section className="schema-editor">
             <div className="field-heading">
               <span>Arguments</span>
@@ -145,13 +172,38 @@ export function ToolsPanel({
                 schema={selectedTool.inputSchema}
                 value={argumentsValue}
                 onChange={(value) => setArgumentsValue(value as Record<string, unknown>)}
+                  renderMarkdown={renderMarkdown}
               />
             )}
           </section>
-          <div className="tool-schema">
-            <span>Input schema</span>
-            <pre>{JSON.stringify(selectedTool.inputSchema, null, 2)}</pre>
-          </div>
+          <section className="tool-schema">
+            <header className="tool-schema-header">
+              <span>Input schema</span>
+              <div className="tool-schema-actions">
+                <button
+                  className="icon-button"
+                  type="button"
+                  aria-label={schemaExpanded ? "Restore input schema" : "Expand input schema"}
+                  aria-expanded={schemaExpanded}
+                  title={schemaExpanded ? "Restore input schema" : "Expand input schema"}
+                  onClick={() => setSchemaExpanded((expanded) => !expanded)}
+                >
+                  {schemaExpanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+                </button>
+                <button
+                  className="icon-button"
+                  type="button"
+                  aria-label={schemaWrapped ? "Disable input schema wrapping" : "Enable input schema wrapping"}
+                  aria-pressed={schemaWrapped}
+                  title={schemaWrapped ? "Disable input schema wrapping" : "Enable input schema wrapping"}
+                  onClick={() => setSchemaWrapped((wrapped) => !wrapped)}
+                >
+                  <WrapText size={14} />
+                </button>
+              </div>
+            </header>
+            <pre className={schemaWrapped ? "schema-pre-wrapped" : ""}>{JSON.stringify(selectedTool.inputSchema, null, 2)}</pre>
+          </section>
         </div>
 
         <div className="tool-run-row">

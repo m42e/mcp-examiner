@@ -55,6 +55,12 @@ export function endpointLabel(transport: TransportConfig) {
   return transport.url;
 }
 
+export function oauthConfigured(profile: ServerProfile) {
+  return profile.transport.type === "http"
+    || profile.transport.type === "sse"
+    || profile.transport.type === "auto";
+}
+
 export function protocolValue(protocol: ProtocolSelection) {
   switch (protocol.mode) {
     case "legacy":
