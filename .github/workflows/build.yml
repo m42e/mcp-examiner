@@ -76,7 +76,8 @@ jobs:
             librsvg2-dev \
             patchelf \
             xdg-utils \
-            wget
+            wget \
+            zip
 
       - name: Install frontend dependencies
         run: npm ci
@@ -254,6 +255,27 @@ jobs:
             echo "::error::No release packages were staged"
             exit 1
           fi
+
+      - name: Create Linux ZIP package
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          zip -j "release-packages/mcp-examiner-${RELEASE_TAG}-${{ matrix.target }}.zip" \
+            target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
+
+      - name: Create macOS ZIP package
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent \
+            "target/${{ matrix.target }}/release/bundle/macos/MCP Examiner.app" \
+            "release-packages/mcp-examiner-${RELEASE_TAG}-${{ matrix.target }}.zip"
+
+      - name: Create Windows ZIP package
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Compress-Archive -LiteralPath "target/${{ matrix.target }}/release/mcp-examiner-app.exe" -DestinationPath "release-packages/mcp-examiner-${env:RELEASE_TAG}-${{ matrix.target }}.zip"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v7.0.1

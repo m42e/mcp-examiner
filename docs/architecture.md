@@ -58,6 +58,8 @@ The browser-only UI tests intentionally avoid privileged Rust commands. Live MCP
 
 The Tauri release workflow builds native bundles for Linux x86_64 and arm64, macOS Apple Silicon, and Windows x86_64 for version tags or an explicitly selected tag. Before publishing a release, update the versions in `package.json`, `Cargo.toml`, and `src-tauri/tauri.conf.json`, then push a matching `v` tag such as `v0.1.0`.
 
+Each target also publishes a ZIP named `mcp-examiner-<tag>-<target>.zip` alongside its installers. The ZIP contains the Linux AppImage, macOS `MCP Examiner.app` bundle, or Windows `mcp-examiner-app.exe`. Extract it before running the application; on Linux, ensure the AppImage is executable. The Windows executable requires the WebView2 Runtime. ZIP packages are included in the release's `SHA256SUMS` file.
+
 Build locally with:
 
 ```bash
