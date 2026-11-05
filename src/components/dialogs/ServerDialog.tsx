@@ -79,8 +79,15 @@ export function ServerDialog({
               {draft.transportType !== "websocket" && (
                 <fieldset className="oauth-fields server-form-wide">
                   <legend>OAuth (optional)</legend>
+                  <label><span>Client name</span><input list="oauth-client-names" value={draft.oauthClientName} onChange={(event) => update({ oauthClientName: event.currentTarget.value })} placeholder="MCP Examiner" aria-describedby="oauth-client-name-help" /></label>
+                  <datalist id="oauth-client-names">
+                    <option value="MCP Examiner" />
+                    <option value="Claude Code" />
+                    <option value="Codex" />
+                  </datalist>
                   <label><span>Client ID</span><input value={draft.oauthClientId} onChange={(event) => update({ oauthClientId: event.currentTarget.value })} /></label>
-                    <label className="server-form-wide"><span>Client metadata document URL</span><input type="url" value={draft.oauthClientMetadataUrl} onChange={(event) => update({ oauthClientMetadataUrl: event.currentTarget.value })} placeholder="https://example.com/client-metadata.json" /></label>
+                  <small id="oauth-client-name-help" className="server-form-wide">Choose a suggested name or enter your own for new dynamic registrations. Leave blank to use MCP Examiner.</small>
+                  <label className="server-form-wide"><span>Client metadata document URL</span><input type="url" value={draft.oauthClientMetadataUrl} onChange={(event) => update({ oauthClientMetadataUrl: event.currentTarget.value })} placeholder="https://example.com/client-metadata.json" /></label>
                   <label><span>Scopes</span><input value={draft.oauthScopes} onChange={(event) => update({ oauthScopes: event.currentTarget.value })} /></label>
                   <label className="server-form-wide"><span>Authorization metadata URL</span><input type="url" value={draft.oauthMetadataUrl} onChange={(event) => update({ oauthMetadataUrl: event.currentTarget.value })} /></label>
                   <label><span>Callback port</span><input type="number" min="1" max="65535" value={draft.oauthCallbackPort} onChange={(event) => update({ oauthCallbackPort: event.currentTarget.value })} /></label>

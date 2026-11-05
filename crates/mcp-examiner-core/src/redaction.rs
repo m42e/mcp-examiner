@@ -181,6 +181,10 @@ impl Redactor {
 
     fn redact_oauth(&self, oauth: &OAuthConfig) -> OAuthConfig {
         OAuthConfig {
+            client_name: oauth
+                .client_name
+                .as_deref()
+                .map(|value| self.redact_text(value)),
             client_id: oauth
                 .client_id
                 .as_deref()

@@ -47,6 +47,7 @@ impl Default for ProtocolSelection {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OAuthConfig {
+    pub client_name: Option<String>,
     pub client_id: Option<String>,
     pub client_metadata_url: Option<String>,
     pub callback_port: Option<u16>,

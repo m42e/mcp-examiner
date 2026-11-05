@@ -12,6 +12,7 @@ export type ProtocolSelection =
   | { mode: "exact"; version: string };
 
 export type OAuthConfig = {
+  clientName: string | null;
   clientId: string | null;
   clientMetadataUrl: string | null;
   callbackPort: number | null;

@@ -11,6 +11,7 @@ The normalized profile shape is:
   "type": "http",
   "url": "https://example.com/mcp",
   "oauth": {
+    "clientName": "MCP Examiner",
     "clientId": "registered-client-id",
     "clientMetadataUrl": "https://example.com/client-metadata.json",
     "scopes": "tools.read",
@@ -21,6 +22,10 @@ The normalized profile shape is:
 ```
 
 The structured server editor exposes these fields for HTTP, SSE, and auto-detected profiles. `callbackPort` is useful when a pre-registered client requires a fixed loopback callback. `authServerMetadataUrl` overrides discovery when an authorization server does not expose metadata at the expected location.
+
+`clientName` sets the `client_name` sent during Dynamic Client Registration. It defaults to `MCP Examiner` when omitted or blank. The editor offers `MCP Examiner`, `Claude Code`, and `Codex` as suggestions and also accepts any manually entered name. Suggestions do not guarantee acceptance by a server. For a Client ID Metadata Document, the name comes from the hosted document instead.
+
+Changing the name does not update an existing registration. To register again with the new name, delete the server's dynamic OAuth client in **Manage secrets**, then log in again. This also deletes the stored OAuth token.
 
 ## Registration order
 

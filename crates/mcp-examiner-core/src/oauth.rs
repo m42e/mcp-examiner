@@ -352,7 +352,13 @@ pub async fn start_oauth_authorization_with_recorder_and_preference(
     let protocol_supports_client_metadata =
         protocol_supports_version(&profile.protocol, CLIENT_METADATA_DOCUMENT_MIN_VERSION);
     let redirect_uri = redirect_uri.into();
-    let mut request = AuthorizationRequest::new(redirect_uri).with_client_name("MCP Examiner");
+    let client_name = oauth
+        .client_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("MCP Examiner");
+    let mut request = AuthorizationRequest::new(redirect_uri).with_client_name(client_name);
     if protocol_supports_version(&profile.protocol, NATIVE_APPLICATION_TYPE_MIN_VERSION) {
         request = request.with_application_type("native");
     }

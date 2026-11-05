@@ -81,7 +81,7 @@ test("keeps the server editor scrollable and confirms abandoning changes", async
   }));
   expect(formMetrics.scrollHeight).toBeGreaterThan(formMetrics.clientHeight);
 
-  await serverDialog.getByLabel("Name").fill("unfinished-server");
+  await serverDialog.getByLabel("Name", { exact: true }).fill("unfinished-server");
   page.once("dialog", (dialog) => {
     expect(dialog.type()).toBe("confirm");
     expect(dialog.message()).toContain("Discard unsaved server changes");
@@ -174,6 +174,7 @@ test("offers OAuth login only after the MCP server requires authorization", asyn
                   url: "https://example.test/mcp",
                   headers: {},
                   oauth: {
+                    clientName: null,
                     clientId: null,
                     clientMetadataUrl: "https://example.test/client-metadata.json",
                     callbackPort: null,
@@ -378,6 +379,10 @@ test("imports, connects, and exercises manual server primitives", async ({ page 
             }
             if (configWriteCount === 1 && (!request.content.includes('"direct-server"') || !request.content.includes("https://edited.test/mcp") || !request.content.includes("${secret:direct-server-authorization}"))) {
               throw new Error("Persistent config save did not serialize the live server list");
+            }
+            const config = JSON.parse(request.content);
+            if (configWriteCount <= 2 && config.mcpServers["direct-server"].oauth.clientName !== "My Custom Client") {
+              throw new Error("Persistent config save did not preserve the OAuth client name");
             }
           }
           return request.path;
@@ -721,8 +726,13 @@ test("imports, connects, and exercises manual server primitives", async ({ page 
 
   await page.getByRole("button", { name: "Add MCP server" }).click();
   const addDialog = page.getByRole("dialog", { name: "Add MCP server" });
-  await addDialog.getByLabel("Name").fill("direct-server");
+  await addDialog.getByLabel("Name", { exact: true }).fill("direct-server");
   await addDialog.getByLabel("URL", { exact: true }).fill("https://direct.test/mcp");
+  const clientName = addDialog.getByLabel("Client name", { exact: true });
+  await expect(clientName).toHaveAttribute("placeholder", "MCP Examiner");
+  const clientNamesList = await clientName.getAttribute("list");
+  expect(await addDialog.locator(`#${clientNamesList} option`).evaluateAll((options) => options.map((option) => option.getAttribute("value")))).toEqual(["MCP Examiner", "Claude Code", "Codex"]);
+  await clientName.fill("Codex");
   await addDialog.getByRole("button", { name: "Add headers" }).click();
   await addDialog.getByLabel("Headers key 1").fill("Authorization");
   await addDialog.getByLabel("Headers value 1").fill("direct-secret");
@@ -732,6 +742,8 @@ test("imports, connects, and exercises manual server primitives", async ({ page 
 
   await page.getByRole("button", { name: "Edit MCP server" }).click();
   const editDialog = page.getByRole("dialog", { name: "Edit MCP server" });
+  await expect(editDialog.getByLabel("Client name", { exact: true })).toHaveValue("Codex");
+  await editDialog.getByLabel("Client name", { exact: true }).fill("  My Custom Client  ");
   await editDialog.getByLabel("URL", { exact: true }).fill("https://edited.test/mcp");
   await editDialog.getByRole("button", { name: "Save server" }).click();
   await expect(page.getByRole("paragraph").filter({ hasText: "https://edited.test/mcp" })).toBeVisible();

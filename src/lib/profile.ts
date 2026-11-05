@@ -23,6 +23,7 @@ export type ServerDraft = {
   headers: KeyValueEntry[];
   protocol: string;
   timeout: string;
+  oauthClientName: string;
   oauthClientId: string;
   oauthClientMetadataUrl: string;
   oauthScopes: string;
@@ -123,6 +124,7 @@ export function emptyServerDraft(): ServerDraft {
     headers: [],
     protocol: "auto",
     timeout: "",
+    oauthClientName: "",
     oauthClientId: "",
     oauthClientMetadataUrl: "",
     oauthScopes: "",
@@ -148,6 +150,7 @@ export function profileDraft(profile: ServerProfile): ServerDraft {
     draft.url = profile.transport.url;
     draft.headers = keyValueEntries(profile.transport.headers);
     if (profile.transport.type !== "websocket" && profile.transport.oauth) {
+      draft.oauthClientName = profile.transport.oauth.clientName ?? "";
       draft.oauthClientId = profile.transport.oauth.clientId ?? "";
       draft.oauthClientMetadataUrl = profile.transport.oauth.clientMetadataUrl ?? "";
       draft.oauthScopes = profile.transport.oauth.scopes ?? "";
@@ -188,12 +191,13 @@ export function draftProfile(draft: ServerDraft, sourcePath: string | null): Ser
       headers: entriesObject(draft.headers) as Record<string, string>,
     };
   } else {
-    const hasOAuth = Boolean(draft.oauthClientId || draft.oauthClientMetadataUrl || draft.oauthScopes || draft.oauthMetadataUrl || draft.oauthCallbackPort || draft.oauthEnterpriseManaged);
+    const hasOAuth = Boolean(draft.oauthClientName.trim() || draft.oauthClientId || draft.oauthClientMetadataUrl || draft.oauthScopes || draft.oauthMetadataUrl || draft.oauthCallbackPort || draft.oauthEnterpriseManaged);
     transport = {
       type: draft.transportType,
       url: draft.url.trim(),
       headers: entriesObject(draft.headers) as Record<string, string>,
       oauth: hasOAuth ? {
+        clientName: draft.oauthClientName.trim() || null,
         clientId: draft.oauthClientId.trim() || null,
         clientMetadataUrl: draft.oauthClientMetadataUrl.trim() || null,
         callbackPort: draft.oauthCallbackPort ? Number(draft.oauthCallbackPort) : null,

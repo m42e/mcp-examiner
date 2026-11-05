@@ -165,6 +165,11 @@ fn resolve_oauth(
     oauth
         .map(|oauth| {
             Ok(OAuthConfig {
+                client_name: oauth
+                    .client_name
+                    .as_deref()
+                    .map(|value| resolve_string(value, context))
+                    .transpose()?,
                 client_id: oauth
                     .client_id
                     .as_deref()
