@@ -141,7 +141,8 @@ jobs:
         env:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         shell: bash
-        run: npm run tauri build -- --target ${{ matrix.target }} --bundles dmg --ci
+        # Retain the .app bundle for ZIP packaging as well as producing the DMG.
+        run: npm run tauri build -- --target ${{ matrix.target }} --bundles app,dmg --ci
 
       - name: Build unsigned application bundles
         if: runner.os != 'macOS' || env.MACOS_SIGNING_SECRETS_PRESENT != 'true'
